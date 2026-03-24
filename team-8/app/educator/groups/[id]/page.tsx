@@ -6,9 +6,7 @@ import {
   getGroupExamAssignments,
   getAvailableExams,
 } from "@/lib/group/actions";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Users } from "lucide-react";
 import AddMemberForm from "./_features/AddMemberForm";
 import MemberList from "./_features/MemberList";

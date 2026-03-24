@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { getGroups } from "@/lib/group/actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import CreateGroupForm from "./_features/CreateGroupForm";
 
 export default async function GroupsPage() {
