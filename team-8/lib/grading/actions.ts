@@ -89,7 +89,7 @@ export async function getPendingSubmissions() {
   const admin = await isAdminUser(supabase, user.id);
 
   // Collect exam IDs: owned + exams in teacher's subject scope
-  let examIdSet = new Set<string>();
+  const examIdSet = new Set<string>();
 
   if (admin) {
     // Admin sees all pending submissions

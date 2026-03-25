@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { syncExamRecipients } from "@/lib/exam-recipients";
-import { getAllowedSubjectIds, isAdminUser } from "@/lib/teacher/permissions";
+import {
+  getAllowedGroupIds,
+  getAllowedSubjectIds,
+} from "@/lib/teacher/permissions";
 
 export async function createExam(formData: FormData) {
   const supabase = await createClient();
@@ -15,6 +18,7 @@ export async function createExam(formData: FormData) {
   const description = formData.get("description") as string;
   const duration_minutes = parseInt(formData.get("duration_minutes") as string);
   const subject_id = ((formData.get("subject_id") as string) || "").trim() || null;
+  const group_id = ((formData.get("group_id") as string) || "").trim() || null;
   // datetime-local input өгөгдлийг UB цагаар хадгалах (+08:00)
   const start_time = (formData.get("start_time") as string) + "+08:00";
   const end_time = (formData.get("end_time") as string) + "+08:00";
@@ -43,6 +47,32 @@ export async function createExam(formData: FormData) {
     }
   }
 
+  if (group_id) {
+    if (allowedIds !== null) {
+      if (!subject_id) {
+        return { error: "Хичээл заавал сонгоно уу" };
+      }
+
+      const allowedGroupIds = await getAllowedGroupIds(
+        supabase,
+        user.id,
+        subject_id
+      ) ?? [];
+
+      if (!allowedGroupIds.includes(group_id)) {
+        return { error: "Энэ бүлэгт энэ хичээлийн шалгалт оноох эрх байхгүй байна" };
+      }
+    }
+
+    const { data: group } = await supabase
+      .from("student_groups")
+      .select("id")
+      .eq("id", group_id)
+      .maybeSingle();
+
+    if (!group) return { error: "Сонгосон бүлэг олдсонгүй" };
+  }
+
   const { data, error } = await supabase
     .from("exams")
     .insert({
@@ -63,6 +93,25 @@ export async function createExam(formData: FormData) {
     .single();
 
   if (error) return { error: error.message };
+
+  if (group_id) {
+    const { error: assignmentError } = await supabase
+      .from("exam_assignments")
+      .insert({
+        exam_id: data.id,
+        group_id,
+        assigned_by: user.id,
+      });
+
+    if (assignmentError) {
+      await supabase
+        .from("exams")
+        .delete()
+        .eq("id", data.id)
+        .eq("created_by", user.id);
+      return { error: assignmentError.message };
+    }
+  }
 
   revalidatePath("/educator");
   redirect(`/educator/exams/${data.id}/questions`);
