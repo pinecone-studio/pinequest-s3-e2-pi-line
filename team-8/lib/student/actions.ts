@@ -193,7 +193,7 @@ function parseMatchingPairs(options: unknown) {
 
 /**
  * Оюутанд оноогдсон шалгалтуудыг авах
- * exam_recipients → exams
+ * exam_recipients → exams + хамгийн сүүлийн session status
  */
 export async function getStudentExams() {
   const supabase = await createClient();
@@ -206,7 +206,7 @@ export async function getStudentExams() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const exams = rows.map((row: any) => row.exams).filter(Boolean);
 
-  return Array.from(
+  const uniqueExams = Array.from(
     new Map(
       exams.map((exam) => [exam.id as string, exam])
     ).values()
@@ -215,6 +215,28 @@ export async function getStudentExams() {
       new Date(a.start_time as string).getTime() -
       new Date(b.start_time as string).getTime()
   );
+
+  if (uniqueExams.length === 0) return [];
+
+  // Хамгийн сүүлийн session status-г нэмэх
+  const { data: sessions } = await supabase
+    .from("exam_sessions")
+    .select("exam_id, status, attempt_number")
+    .eq("user_id", user.id)
+    .in("exam_id", uniqueExams.map((e) => e.id as string))
+    .order("attempt_number", { ascending: false });
+
+  const sessionMap = new Map<string, string>();
+  for (const s of sessions ?? []) {
+    if (!sessionMap.has(s.exam_id as string)) {
+      sessionMap.set(s.exam_id as string, s.status as string);
+    }
+  }
+
+  return uniqueExams.map((exam) => ({
+    ...exam,
+    mySessionStatus: sessionMap.get(exam.id as string) ?? null,
+  }));
 }
 
 /**
@@ -365,7 +387,7 @@ export async function startExamSession(examId: string) {
     const maxAttempts = Number(exam.max_attempts ?? 1);
 
     if (nextAttemptNumber > maxAttempts) {
-      return { error: "Шалгалтын оролдлогын эрх дууссан байна" };
+      return { error: "Шалгалтын оролдлогын эрх дууссан байна", redirectToResult: true };
     }
 
     const { data: session, error } = await supabase
@@ -459,7 +481,7 @@ export async function submitExam(sessionId: string) {
     .select("id, exam_id, status, total_score, max_score")
     .eq("id", sessionId)
     .eq("user_id", user.id)
-    .single();
+    .maybeSingle();
 
   if (!session) return { error: "Session олдсонгүй" };
 
@@ -616,7 +638,7 @@ export async function submitExam(sessionId: string) {
     const hasEssayQuestions = (questions ?? []).some((q) => q.type === "essay");
     const finalStatus = hasEssayQuestions ? "submitted" : "graded";
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("exam_sessions")
       .update({
         status: finalStatus,
@@ -626,6 +648,8 @@ export async function submitExam(sessionId: string) {
       })
       .eq("id", sessionId)
       .eq("status", "in_progress");
+
+    if (updateError) return { error: updateError.message };
 
     await redis.del(redisKey);
     await cacheSessionMeta(sessionId, user.id, finalStatus);
@@ -702,15 +726,20 @@ export async function getExamResult(examId: string) {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: session } = await supabase
+  const { data: session, error: sessionError } = await supabase
     .from("exam_sessions")
-    .select("*, exams(title, passing_score)")
+    .select("id, status, total_score, max_score, submitted_at, attempt_number, exam_id, exams(title, passing_score)")
     .eq("exam_id", examId)
     .eq("user_id", user.id)
     .in("status", ["submitted", "graded"])
     .order("submitted_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (sessionError) {
+    console.error("[getExamResult] session query error:", sessionError.message);
+    return null;
+  }
 
   if (!session) return null;
 

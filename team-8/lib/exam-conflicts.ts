@@ -1,12 +1,21 @@
 import { createClient } from "@/lib/supabase/server";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+const EXAM_SCHEDULING_GUARD_ERROR =
+  "Шалгалтын давхцал шалгах шинэчлэл идэвхжээгүй байна. Хамгийн сүүлийн DB migration-аа apply хийнэ үү.";
 
 interface ScheduledExam {
   id: string;
   title: string;
   start_time: string;
   end_time: string;
+}
+
+interface ConflictRow {
+  student_id: string;
+  student_name: string | null;
+  conflicting_exam_id: string;
+  conflicting_exam_title: string | null;
 }
 
 function buildConflictError(
@@ -56,28 +65,43 @@ async function getGroupStudentIds(
   );
 }
 
-async function getConflictingAssignmentsForStudents(
+async function getConflictingAssignmentsForStudentsViaRpc(
   supabase: SupabaseServerClient,
-  studentIds: string[],
-  exam: ScheduledExam
+  exam: ScheduledExam,
+  groupIds: string[]
 ) {
-  if (studentIds.length === 0) return [];
+  if (groupIds.length === 0) return { rows: [] as ConflictRow[] };
 
+  const { data, error } = await supabase.rpc("get_exam_assignment_conflicts", {
+    p_exam_id: exam.id,
+    p_group_ids: groupIds,
+    p_start_time: exam.start_time,
+    p_end_time: exam.end_time,
+  });
+
+  if (error) {
+    if (error.code === "PGRST202" || error.code === "42883") {
+      return { error: EXAM_SCHEDULING_GUARD_ERROR };
+    }
+
+    return {
+      error: `Шалгалтын давхцлыг шалгах үед алдаа гарлаа: ${error.message}`,
+    };
+  }
+
+  return { rows: (data ?? []) as ConflictRow[] };
+}
+
+async function getAssignedGroupIdsForExam(
+  supabase: SupabaseServerClient,
+  examId: string
+) {
   const { data } = await supabase
-    .from("exam_recipients")
-    .select(
-      `
-      student_id,
-      exams!inner(id, title, start_time, end_time),
-      profiles!exam_recipients_student_id_fkey(full_name, email)
-    `
-    )
-    .in("student_id", studentIds)
-    .neq("exam_id", exam.id)
-    .lt("exams.start_time", exam.end_time)
-    .gt("exams.end_time", exam.start_time);
+    .from("exam_assignments")
+    .select("group_id")
+    .eq("exam_id", examId);
 
-  return data ?? [];
+  return Array.from(new Set((data ?? []).map((row) => row.group_id)));
 }
 
 export async function getGroupAssignmentConflictError(
@@ -91,23 +115,58 @@ export async function getGroupAssignmentConflictError(
   const studentIds = await getGroupStudentIds(supabase, groupId);
   if (studentIds.length === 0) return null;
 
-  const conflicts = await getConflictingAssignmentsForStudents(
+  const conflictResult = await getConflictingAssignmentsForStudentsViaRpc(
     supabase,
-    studentIds,
-    exam
+    exam,
+    [groupId]
   );
+  if ("error" in conflictResult) return conflictResult.error;
+
+  const conflicts = conflictResult.rows;
 
   if (conflicts.length === 0) return null;
 
   return buildConflictError(
     exam.title,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    conflicts.map((conflict: any) => ({
-      studentName:
-        conflict.profiles?.full_name ||
-        conflict.profiles?.email ||
-        "Сурагч",
-      conflictingExamTitle: conflict.exams?.title || "Өөр шалгалт",
+    conflicts.map((conflict) => ({
+      studentName: conflict.student_name || "Сурагч",
+      conflictingExamTitle: conflict.conflicting_exam_title || "Өөр шалгалт",
+    }))
+  );
+}
+
+export async function getExamAssignmentConflictError(
+  supabase: SupabaseServerClient,
+  examId: string,
+  overrides?: Partial<Pick<ScheduledExam, "title" | "start_time" | "end_time">>
+) {
+  const exam = await getExamSchedule(supabase, examId);
+  if (!exam) return "Шалгалтын хуваарь олдсонгүй";
+
+  const assignedGroupIds = await getAssignedGroupIdsForExam(supabase, examId);
+  if (assignedGroupIds.length === 0) return null;
+
+  const targetExam: ScheduledExam = {
+    ...exam,
+    title: overrides?.title ?? exam.title,
+    start_time: overrides?.start_time ?? exam.start_time,
+    end_time: overrides?.end_time ?? exam.end_time,
+  };
+
+  const conflictResult = await getConflictingAssignmentsForStudentsViaRpc(
+    supabase,
+    targetExam,
+    assignedGroupIds
+  );
+  if ("error" in conflictResult) return conflictResult.error;
+
+  if (conflictResult.rows.length === 0) return null;
+
+  return buildConflictError(
+    targetExam.title,
+    conflictResult.rows.map((conflict) => ({
+      studentName: conflict.student_name || "Сурагч",
+      conflictingExamTitle: conflict.conflicting_exam_title || "Өөр шалгалт",
     }))
   );
 }
@@ -119,9 +178,8 @@ export async function getGroupMemberConflictError(
 ) {
   const { data: assignedExams } = await supabase
     .from("exam_assignments")
-    .select("exam_id, exams!inner(id, title, start_time, end_time, is_published)")
-    .eq("group_id", groupId)
-    .eq("exams.is_published", true);
+    .select("exam_id, exams!inner(id, title, start_time, end_time)")
+    .eq("group_id", groupId);
 
   for (const assignment of assignedExams ?? []) {
     const exam = Array.isArray(assignment.exams)
@@ -130,22 +188,23 @@ export async function getGroupMemberConflictError(
 
     if (!exam) continue;
 
-    const conflicts = await getConflictingAssignmentsForStudents(
+    const conflictResult = await getConflictingAssignmentsForStudentsViaRpc(
       supabase,
-      [studentId],
-      exam
+      exam,
+      [groupId]
+    );
+    if ("error" in conflictResult) return conflictResult.error;
+
+    const conflicts = conflictResult.rows.filter(
+      (conflict) => conflict.student_id === studentId
     );
 
     if (conflicts.length > 0) {
       return buildConflictError(
         exam.title,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        conflicts.map((conflict: any) => ({
-          studentName:
-            conflict.profiles?.full_name ||
-            conflict.profiles?.email ||
-            "Сурагч",
-          conflictingExamTitle: conflict.exams?.title || "Өөр шалгалт",
+        conflicts.map((conflict) => ({
+          studentName: conflict.student_name || "Сурагч",
+          conflictingExamTitle: conflict.conflicting_exam_title || "Өөр шалгалт",
         }))
       );
     }

@@ -55,6 +55,11 @@ export type QuestionType =
   | "fill_blank"
   | "matching";
 export type Difficulty = "easy" | "medium" | "hard";
+export type QuestionBankVisibility =
+  | "private"
+  | "shared_subject"
+  | "admin_curated"
+  | "archived";
 
 export interface Question {
   id: string;
@@ -77,6 +82,7 @@ export interface QuestionBank {
   id: string;
   subject_id: string | null;
   created_by: string;
+  visibility: QuestionBankVisibility;
   type: QuestionType;
   content: string;
   content_html: string | null;
@@ -88,9 +94,21 @@ export interface QuestionBank {
   tags: string[];
   explanation: string | null;
   usage_count: number;
+  last_used_at: string | null;
   created_at: string;
   updated_at: string;
   subjects?: { name: string } | null;
+}
+
+export interface QuestionBankSummary {
+  total: number;
+  manageable: number;
+  private_count: number;
+  shared_subject_count: number;
+  admin_curated_count: number;
+  archived_count: number;
+  total_usage_count: number;
+  recently_used_count: number;
 }
 
 export interface TeacherSubject {

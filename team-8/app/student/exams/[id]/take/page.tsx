@@ -15,7 +15,9 @@ export default async function TakeExamPage({
   const { id: examId } = await params;
   const data = await getExamForStudent(examId);
 
-  if (!data) redirect("/student/exams");
+  if (!data) {
+    redirect("/student/exams?error=exam_not_found");
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { exam, questions } = data as any;
@@ -26,12 +28,18 @@ export default async function TakeExamPage({
   const endTime = new Date(exam.end_time as string);
 
   if (now < startTime || now > endTime) {
-    redirect("/student/exams");
+    redirect(`/student/exams?error=time_window&exam=${encodeURIComponent(exam.title)}`);
   }
 
   // Session эхлүүлэх
   const result = await startExamSession(examId);
-  if ("error" in result) redirect("/student/exams");
+  if ("error" in result) {
+    // Оролдлогын эрх дууссан → үр дүн хуудас руу
+    if ("redirectToResult" in result && result.redirectToResult) {
+      redirect(`/student/exams/${examId}/result`);
+    }
+    redirect(`/student/exams?error=${encodeURIComponent(result.error ?? "session_failed")}`);
+  }
 
   const session = result.session!;
 

@@ -22,11 +22,12 @@ export default async function ExamResultPage({
 
   if (!data) redirect("/student/exams");
 
+  const examMeta = Array.isArray(data.exams) ? data.exams[0] : data.exams;
   const totalScore = data.total_score ?? 0;
   const maxScore = data.max_score ?? 0;
   const percentage =
     maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
-  const passingScore = data.exams?.passing_score ?? 60;
+  const passingScore = examMeta?.passing_score ?? 60;
   const passed = percentage >= passingScore;
   const isGraded = data.status === "graded";
 
@@ -38,8 +39,8 @@ export default async function ExamResultPage({
       <Card className="text-center">
         <CardHeader>
           <CardTitle className="text-2xl">Шалгалтын үр дүн</CardTitle>
-          {data.exams?.title && (
-            <p className="text-muted-foreground">{data.exams.title}</p>
+          {examMeta?.title && (
+            <p className="text-muted-foreground">{examMeta.title}</p>
           )}
         </CardHeader>
         <CardContent className="space-y-4">

@@ -3,11 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getExamAssignmentConflictError, getGroupAssignmentConflictError } from "@/lib/exam-conflicts";
 import { syncExamRecipients } from "@/lib/exam-recipients";
+import { getExamPublishGuardError } from "@/lib/exam-readiness";
 import {
   getAllowedGroupIds,
   getAllowedSubjectIds,
 } from "@/lib/teacher/permissions";
+
+function getScheduleWindowMinutes(startTime: string, endTime: string) {
+  return Math.floor(
+    (new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000
+  );
+}
 
 export async function createExam(formData: FormData) {
   const supabase = await createClient();
@@ -33,6 +41,11 @@ export async function createExam(formData: FormData) {
 
   if (new Date(start_time).getTime() >= new Date(end_time).getTime()) {
     return { error: "Дуусах цаг нь эхлэх цагаасаа хойш байх ёстой" };
+  }
+
+  const scheduleWindowMinutes = getScheduleWindowMinutes(start_time, end_time);
+  if (duration_minutes > scheduleWindowMinutes) {
+    return { error: "Шалгалтын хугацаа нь нээлттэй цонхоос урт байж болохгүй" };
   }
 
   // Subject permission check (strict)
@@ -95,6 +108,20 @@ export async function createExam(formData: FormData) {
   if (error) return { error: error.message };
 
   if (group_id) {
+    const conflictError = await getGroupAssignmentConflictError(
+      supabase,
+      group_id,
+      data.id
+    );
+    if (conflictError) {
+      await supabase
+        .from("exams")
+        .delete()
+        .eq("id", data.id)
+        .eq("created_by", user.id);
+      return { error: conflictError };
+    }
+
     const { error: assignmentError } = await supabase
       .from("exam_assignments")
       .insert({
@@ -124,7 +151,7 @@ export async function updateExam(examId: string, formData: FormData) {
 
   const { data: existingExam } = await supabase
     .from("exams")
-    .select("id, is_published")
+    .select("id, title, is_published")
     .eq("id", examId)
     .eq("created_by", user.id)
     .maybeSingle();
@@ -142,6 +169,12 @@ export async function updateExam(examId: string, formData: FormData) {
     return { error: "Дуусах цаг нь эхлэх цагаасаа хойш байх ёстой" };
   }
 
+  const scheduleWindowMinutes = getScheduleWindowMinutes(start_time, end_time);
+  const durationMinutes = parseInt(formData.get("duration_minutes") as string);
+  if (durationMinutes > scheduleWindowMinutes) {
+    return { error: "Шалгалтын хугацаа нь нээлттэй цонхоос урт байж болохгүй" };
+  }
+
   // Subject permission check (strict)
   const allowedIds = await getAllowedSubjectIds(supabase, user.id);
   if (allowedIds !== null) {
@@ -153,13 +186,23 @@ export async function updateExam(examId: string, formData: FormData) {
     }
   }
 
+  const title = String(formData.get("title") || "").trim();
+  const conflictError = await getExamAssignmentConflictError(supabase, examId, {
+    title: title || existingExam.title,
+    start_time,
+    end_time,
+  });
+  if (conflictError) {
+    return { error: conflictError };
+  }
+
   const { error } = await supabase
     .from("exams")
     .update({
-      title: formData.get("title") as string,
+      title,
       description: (formData.get("description") as string) || null,
       subject_id,
-      duration_minutes: parseInt(formData.get("duration_minutes") as string),
+      duration_minutes: durationMinutes,
       start_time,
       end_time,
       passing_score: parseFloat(formData.get("passing_score") as string) || 60,
@@ -191,13 +234,13 @@ export async function publishExam(examId: string) {
 
   if (!exam) return { error: "Шалгалт олдсонгүй" };
 
-  const { count: questionCount } = await supabase
-    .from("questions")
-    .select("id", { count: "exact", head: true })
-    .eq("exam_id", examId);
-
-  if (!questionCount || questionCount <= 0) {
-    return { error: "Нийтлэхийн өмнө дор хаяж 1 асуулт нэмнэ үү" };
+  const publishGuardError = await getExamPublishGuardError(
+    supabase,
+    user.id,
+    examId
+  );
+  if (publishGuardError) {
+    return { error: publishGuardError };
   }
 
   const syncResult = await syncExamRecipients(supabase, examId, user.id);

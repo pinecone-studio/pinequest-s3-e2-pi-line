@@ -25,6 +25,7 @@ const navItems: Record<UserRole, NavItem[]> = {
   ],
   admin: [
     { label: "Хянах самбар", href: "/admin" },
+    { label: "Хичээл оноолт", href: "/admin/teachers" },
     { label: "Хэрэглэгчид", href: "/admin/users" },
   ],
 };

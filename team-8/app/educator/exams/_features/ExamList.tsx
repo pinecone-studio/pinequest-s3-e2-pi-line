@@ -145,10 +145,21 @@ export default function ExamList({ exams }: Props) {
                   <Badge variant="outline">Сонголт холих</Badge>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">{startDate}</p>
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>{startDate}</p>
+                <p>
+                  {exam.is_published
+                    ? qCount > 0
+                      ? "Нийтлэгдсэн. Хуваарь, assignment, дүнгээ цааш хянана."
+                      : "Нийтлэгдсэн боловч асуултын тоог шалгана уу."
+                    : qCount > 0
+                    ? "Агуулга бэлдсэн. Нийтлэхээс өмнө бэлэн байдлын самбараа шалгана уу."
+                    : "Нийтлэхийн өмнө асуулт, assignment, хуваариа бүрэн болгоно уу."}
+                </p>
+              </div>
               <Link href={`/educator/exams/${exam.id}/questions`} className="mt-auto">
                 <Button variant="outline" size="sm" className="w-full">
-                  Засах
+                  {exam.is_published ? "Харах" : "Засах"}
                 </Button>
               </Link>
             </CardContent>

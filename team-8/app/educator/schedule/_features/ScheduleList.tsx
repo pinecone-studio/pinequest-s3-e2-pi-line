@@ -160,9 +160,9 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
                   key={exam.id}
                   className={`border ${
                     hasConflict
-                      ? "border-orange-300 bg-orange-50/40"
+                      ? "border-amber-300 bg-amber-50/30"
                       : isActive
-                      ? "border-green-300 bg-green-50/40"
+                      ? "border-slate-300 bg-slate-50"
                       : ""
                   }`}
                 >
@@ -180,7 +180,7 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
                             </Badge>
                           )}
                           {isActive && (
-                            <Badge className="text-xs bg-green-600 shrink-0">
+                            <Badge variant="secondary" className="text-xs shrink-0">
                               Явагдаж байна
                             </Badge>
                           )}
@@ -216,7 +216,7 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
 
                         {/* Зөрчлийн анхааруулга */}
                         {hasConflict && (
-                          <div className="flex items-start gap-1.5 rounded-md bg-orange-100 px-2 py-1 text-xs text-orange-700">
+                          <div className="flex items-start gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                             <span>
                               <strong>Зөрчил:</strong>{" "}
@@ -227,7 +227,7 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
                         )}
 
                         {!hasConflict && exam.groups.length > 0 && (
-                          <div className="flex items-center gap-1 text-xs text-green-700">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             Зөрчилгүй
                           </div>
