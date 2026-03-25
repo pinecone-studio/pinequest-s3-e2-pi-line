@@ -346,6 +346,20 @@ export async function startExamSession(examId: string) {
       return { session: concurrentInProgress };
     }
 
+    // Сурагч өөр шалгалт өгч байгаа эсэх шалгах (нэг зэрэг хоёр шалгалт өгч болохгүй)
+    const { data: otherActiveSession } = await supabase
+      .from("exam_sessions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "in_progress")
+      .neq("exam_id", examId)
+      .limit(1)
+      .maybeSingle();
+
+    if (otherActiveSession) {
+      return { error: "Та одоо өөр шалгалт өгч байна. Эхлээд тэр шалгалтаа дуусгана уу." };
+    }
+
     const nextAttemptNumber =
       (sessions?.[0]?.attempt_number ?? 0) + 1;
     const maxAttempts = Number(exam.max_attempts ?? 1);
@@ -516,7 +530,7 @@ export async function submitExam(sessionId: string) {
         .eq("session_id", sessionId),
       supabase
         .from("questions")
-        .select("id, points")
+        .select("id, type, points")
         .eq("exam_id", session.exam_id),
     ]);
 
@@ -598,10 +612,14 @@ export async function submitExam(sessionId: string) {
       }
     }
 
+    // Essay асуулт байхгүй бол автоматаар "graded" болгоно
+    const hasEssayQuestions = (questions ?? []).some((q) => q.type === "essay");
+    const finalStatus = hasEssayQuestions ? "submitted" : "graded";
+
     await supabase
       .from("exam_sessions")
       .update({
-        status: "submitted",
+        status: finalStatus,
         submitted_at: new Date().toISOString(),
         total_score: totalScore,
         max_score: maxScore,
@@ -610,7 +628,7 @@ export async function submitExam(sessionId: string) {
       .eq("status", "in_progress");
 
     await redis.del(redisKey);
-    await cacheSessionMeta(sessionId, user.id, "submitted");
+    await cacheSessionMeta(sessionId, user.id, finalStatus);
 
     revalidatePath("/student");
     revalidatePath("/student/exams");
