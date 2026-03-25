@@ -6,7 +6,7 @@ import {
   deleteQuestionBankItem,
   updateQuestionBankItem,
 } from "@/lib/question/actions";
-import type { QuestionBank, Subject } from "@/types";
+import type { QuestionBank, QuestionType, Subject } from "@/types";
 import LatexShortcutPanel from "@/components/math/LatexShortcutPanel";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,11 +40,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-const questionTypes = [
-  { value: "multiple_choice", label: "Сонголтот" },
-  { value: "true_false", label: "Үнэн/Худал" },
-  { value: "essay", label: "Нээлттэй" },
-  { value: "fill_blank", label: "Цоорхой" },
+const questionTypes: { value: QuestionType; label: string }[] = [
+  { value: "multiple_choice", label: "Сонгох" },
+  { value: "multiple_response", label: "Олон сонголттой" },
+  { value: "fill_blank", label: "Нөхөх" },
+  { value: "essay", label: "Задгай / Эссэ" },
+  { value: "matching", label: "Холбох" },
 ];
 
 const difficultyOptions = [
@@ -58,18 +59,63 @@ interface EditQuestionBankDialogProps {
   subjects: Subject[];
 }
 
-function getDefaultOptions(question: QuestionBank) {
-  if (question.type === "multiple_choice") {
+interface MatchingPair {
+  left: string;
+  right: string;
+}
+
+function getChoiceOptions(question: QuestionBank) {
+  if (
+    question.type === "multiple_choice" ||
+    question.type === "multiple_response"
+  ) {
     const existingOptions = Array.isArray(question.options)
       ? question.options.map((option) => option.trim()).filter(Boolean)
       : [];
 
-    return existingOptions.length > 0
-      ? existingOptions
-      : ["", "", "", ""];
+    return existingOptions.length > 0 ? existingOptions : ["", ""];
   }
 
-  return ["", "", "", ""];
+  return ["", ""];
+}
+
+function getMultipleCorrectAnswers(question: QuestionBank) {
+  if (question.type !== "multiple_response" || !question.correct_answer) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(question.correct_answer) as string[];
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function getMatchingPairs(question: QuestionBank): MatchingPair[] {
+  if (question.type !== "matching" || !Array.isArray(question.options)) {
+    return [
+      { left: "", right: "" },
+      { left: "", right: "" },
+    ];
+  }
+
+  const pairs = question.options
+    .map((option) => {
+      const [left, right] = String(option).split("|||");
+      if (!left || !right) return null;
+      return { left, right };
+    })
+    .filter((item): item is MatchingPair => Boolean(item));
+
+  return pairs.length > 0
+    ? pairs
+    : [
+        { left: "", right: "" },
+        { left: "", right: "" },
+      ];
 }
 
 export default function EditQuestionBankDialog({
@@ -78,11 +124,17 @@ export default function EditQuestionBankDialog({
 }: EditQuestionBankDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [type, setType] = useState(question.type);
+  const [type, setType] = useState<QuestionType>(question.type);
   const [subjectId, setSubjectId] = useState(question.subject_id ?? "__none");
   const [difficulty, setDifficulty] = useState(question.difficulty);
-  const [options, setOptions] = useState<string[]>(() => getDefaultOptions(question));
+  const [options, setOptions] = useState<string[]>(() => getChoiceOptions(question));
   const [correctAnswer, setCorrectAnswer] = useState(question.correct_answer ?? "");
+  const [multipleCorrectAnswers, setMultipleCorrectAnswers] = useState<string[]>(
+    () => getMultipleCorrectAnswers(question)
+  );
+  const [matchingPairs, setMatchingPairs] = useState<MatchingPair[]>(() =>
+    getMatchingPairs(question)
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -92,13 +144,19 @@ export default function EditQuestionBankDialog({
     [question.tags]
   );
 
+  function resetState(nextType: QuestionType = question.type) {
+    setType(nextType);
+    setSubjectId(question.subject_id ?? "__none");
+    setDifficulty(question.difficulty);
+    setOptions(getChoiceOptions(question));
+    setCorrectAnswer(question.correct_answer ?? "");
+    setMultipleCorrectAnswers(getMultipleCorrectAnswers(question));
+    setMatchingPairs(getMatchingPairs(question));
+  }
+
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
-      setType(question.type);
-      setSubjectId(question.subject_id ?? "__none");
-      setDifficulty(question.difficulty);
-      setOptions(getDefaultOptions(question));
-      setCorrectAnswer(question.correct_answer ?? "");
+      resetState();
     } else {
       setError(null);
       setSaving(false);
@@ -108,18 +166,33 @@ export default function EditQuestionBankDialog({
     setOpen(nextOpen);
   }
 
+  function handleTypeChange(value: QuestionType) {
+    setType(value);
+    setOptions(["", ""]);
+    setCorrectAnswer("");
+    setMultipleCorrectAnswers([]);
+    setMatchingPairs([
+      { left: "", right: "" },
+      { left: "", right: "" },
+    ]);
+  }
+
   function updateOption(index: number, value: string) {
+    const previousValue = options[index];
+
     setOptions((prev) => {
       const next = [...prev];
-      const previousValue = next[index];
       next[index] = value;
-
-      if (correctAnswer === previousValue) {
-        setCorrectAnswer(value);
-      }
-
       return next;
     });
+
+    if (correctAnswer === previousValue) {
+      setCorrectAnswer(value);
+    }
+
+    setMultipleCorrectAnswers((prev) =>
+      prev.map((answer) => (answer === previousValue ? value : answer))
+    );
   }
 
   function addOption() {
@@ -127,19 +200,48 @@ export default function EditQuestionBankDialog({
   }
 
   function removeOption(index: number) {
-    setOptions((prev) => {
-      const next = prev.filter((_, optionIndex) => optionIndex !== index);
-      const removedValue = prev[index];
+    const removedValue = options[index];
+    const nextOptions = options.filter((_, optionIndex) => optionIndex !== index);
 
-      if (correctAnswer === removedValue) {
-        setCorrectAnswer("");
-      }
+    setOptions(nextOptions.length >= 2 ? nextOptions : [...nextOptions, ""]);
 
-      if (next.length >= 2) {
-        return next;
-      }
+    if (correctAnswer === removedValue) {
+      setCorrectAnswer("");
+    }
 
-      return [...next, ...Array.from({ length: 2 - next.length }, () => "")];
+    setMultipleCorrectAnswers((prev) =>
+      prev.filter((answer) => answer !== removedValue)
+    );
+  }
+
+  function toggleMultipleAnswer(option: string) {
+    setMultipleCorrectAnswers((prev) =>
+      prev.includes(option)
+        ? prev.filter((item) => item !== option)
+        : [...prev, option]
+    );
+  }
+
+  function updateMatchingPair(
+    index: number,
+    key: keyof MatchingPair,
+    value: string
+  ) {
+    setMatchingPairs((prev) =>
+      prev.map((pair, pairIndex) =>
+        pairIndex === index ? { ...pair, [key]: value } : pair
+      )
+    );
+  }
+
+  function addMatchingPair() {
+    setMatchingPairs((prev) => [...prev, { left: "", right: "" }]);
+  }
+
+  function removeMatchingPair(index: number) {
+    setMatchingPairs((prev) => {
+      const next = prev.filter((_, pairIndex) => pairIndex !== index);
+      return next.length >= 2 ? next : [...next, { left: "", right: "" }];
     });
   }
 
@@ -153,6 +255,7 @@ export default function EditQuestionBankDialog({
 
     if (type === "multiple_choice") {
       const validOptions = options.map((option) => option.trim()).filter(Boolean);
+
       if (validOptions.length < 2) {
         setError("Дор хаяж 2 сонголт үлдээнэ үү.");
         setSaving(false);
@@ -167,8 +270,26 @@ export default function EditQuestionBankDialog({
 
       formData.set("options", JSON.stringify(validOptions));
       formData.set("correct_answer", correctAnswer.trim());
-    } else if (type === "true_false") {
-      formData.set("correct_answer", correctAnswer || "Үнэн");
+    } else if (type === "multiple_response") {
+      const validOptions = options.map((option) => option.trim()).filter(Boolean);
+      const validCorrectAnswers = multipleCorrectAnswers
+        .map((answer) => answer.trim())
+        .filter((answer) => answer && validOptions.includes(answer));
+
+      if (validOptions.length < 2) {
+        setError("Дор хаяж 2 сонголт үлдээнэ үү.");
+        setSaving(false);
+        return;
+      }
+
+      if (validCorrectAnswers.length < 1) {
+        setError("Дор хаяж 1 зөв хариулт сонгоно уу.");
+        setSaving(false);
+        return;
+      }
+
+      formData.set("options", JSON.stringify(validOptions));
+      formData.set("correct_answer", JSON.stringify(validCorrectAnswers));
     } else if (type === "fill_blank") {
       if (!correctAnswer.trim()) {
         setError("Нөхөх асуултын зөв хариултыг оруулна уу.");
@@ -177,6 +298,23 @@ export default function EditQuestionBankDialog({
       }
 
       formData.set("correct_answer", correctAnswer.trim());
+      formData.set("options", "[]");
+    } else if (type === "matching") {
+      const validPairs = matchingPairs
+        .map((pair) => ({
+          left: pair.left.trim(),
+          right: pair.right.trim(),
+        }))
+        .filter((pair) => pair.left && pair.right);
+
+      if (validPairs.length < 2) {
+        setError("Холбох асуултад дор хаяж 2 мөр хэрэгтэй.");
+        setSaving(false);
+        return;
+      }
+
+      formData.set("options", JSON.stringify(validPairs));
+      formData.set("correct_answer", "");
     } else {
       formData.set("correct_answer", "");
       formData.set("options", "[]");
@@ -219,7 +357,8 @@ export default function EditQuestionBankDialog({
         <DialogHeader>
           <DialogTitle>Асуултын сангийн бичлэг засах</DialogTitle>
           <DialogDescription>
-            Content, subject, difficulty, image, tags болон зөв хариултыг шинэчилнэ.
+            Content, subject, difficulty, image, tags болон зөв хариултыг
+            шинэчилнэ.
           </DialogDescription>
         </DialogHeader>
 
@@ -233,20 +372,7 @@ export default function EditQuestionBankDialog({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Асуултын төрөл</Label>
-              <Select
-                value={type}
-                onValueChange={(value) => {
-                  setType(value as QuestionBank["type"]);
-                  if (value === "true_false") {
-                    setCorrectAnswer("Үнэн");
-                  } else if (value !== "multiple_choice") {
-                    setOptions(["", "", "", ""]);
-                    if (value === "essay") {
-                      setCorrectAnswer("");
-                    }
-                  }
-                }}
-              >
+              <Select value={type} onValueChange={(value) => handleTypeChange(value as QuestionType)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -332,7 +458,9 @@ export default function EditQuestionBankDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor={`content-html-${question.id}`}>Форматтай контент (HTML)</Label>
+            <Label htmlFor={`content-html-${question.id}`}>
+              Форматтай контент (HTML)
+            </Label>
             <Textarea
               id={`content-html-${question.id}`}
               name="content_html"
@@ -354,7 +482,7 @@ export default function EditQuestionBankDialog({
             />
           </div>
 
-          {type === "multiple_choice" && (
+          {(type === "multiple_choice" || type === "multiple_response") && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Сонголтууд</Label>
@@ -363,48 +491,44 @@ export default function EditQuestionBankDialog({
                 </Button>
               </div>
 
-              {options.map((option, index) => (
-                <div key={`${question.id}-option-${index}`} className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`correct-choice-${question.id}`}
-                    checked={correctAnswer === option && option.trim() !== ""}
-                    onChange={() => setCorrectAnswer(option)}
-                    className="h-4 w-4 shrink-0"
-                    disabled={!option.trim()}
-                  />
-                  <Input
-                    value={option}
-                    onChange={(event) => updateOption(index, event.target.value)}
-                    placeholder={`${index + 1}-р сонголт`}
-                  />
-                  {options.length > 2 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeOption(index)}
-                    >
-                      Хасах
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+              {options.map((option, index) => {
+                const isChecked =
+                  type === "multiple_choice"
+                    ? correctAnswer === option && option.trim() !== ""
+                    : multipleCorrectAnswers.includes(option) && option.trim() !== "";
 
-          {type === "true_false" && (
-            <div className="space-y-2">
-              <Label>Зөв хариулт</Label>
-              <Select value={correctAnswer || "Үнэн"} onValueChange={setCorrectAnswer}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Үнэн">Үнэн</SelectItem>
-                  <SelectItem value="Худал">Худал</SelectItem>
-                </SelectContent>
-              </Select>
+                return (
+                  <div key={`${question.id}-option-${index}`} className="flex items-center gap-2">
+                    <input
+                      type={type === "multiple_choice" ? "radio" : "checkbox"}
+                      name={`correct-choice-${question.id}-${index}`}
+                      checked={isChecked}
+                      onChange={() =>
+                        type === "multiple_choice"
+                          ? setCorrectAnswer(option)
+                          : toggleMultipleAnswer(option)
+                      }
+                      className="h-4 w-4 shrink-0"
+                      disabled={!option.trim()}
+                    />
+                    <Input
+                      value={option}
+                      onChange={(event) => updateOption(index, event.target.value)}
+                      placeholder={`${index + 1}-р сонголт`}
+                    />
+                    {options.length > 2 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeOption(index)}
+                      >
+                        Хасах
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -420,9 +544,53 @@ export default function EditQuestionBankDialog({
             </div>
           )}
 
+          {type === "matching" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Холбох мөрүүд</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addMatchingPair}>
+                  Мөр нэмэх
+                </Button>
+              </div>
+
+              {matchingPairs.map((pair, index) => (
+                <div
+                  key={`${question.id}-pair-${index}`}
+                  className="grid gap-2 md:grid-cols-[1fr_auto_1fr_auto] md:items-center"
+                >
+                  <Input
+                    value={pair.left}
+                    onChange={(event) =>
+                      updateMatchingPair(index, "left", event.target.value)
+                    }
+                    placeholder={`Зүүн тал ${index + 1}`}
+                  />
+                  <span className="text-center text-sm text-muted-foreground">→</span>
+                  <Input
+                    value={pair.right}
+                    onChange={(event) =>
+                      updateMatchingPair(index, "right", event.target.value)
+                    }
+                    placeholder={`Баруун тал ${index + 1}`}
+                  />
+                  {matchingPairs.length > 2 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeMatchingPair(index)}
+                    >
+                      Хасах
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {type === "essay" && (
             <p className="text-sm text-muted-foreground">
-              Нээлттэй асуултанд зөв хариулт шаардахгүй.
+              Задгай асуултанд зөв хариулт шаардахгүй.
             </p>
           )}
 
