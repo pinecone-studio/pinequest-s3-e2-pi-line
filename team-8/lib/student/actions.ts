@@ -684,7 +684,7 @@ export async function getExamResult(examId: string) {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data } = await supabase
+  const { data: session } = await supabase
     .from("exam_sessions")
     .select("*, exams(title, passing_score)")
     .eq("exam_id", examId)
@@ -694,7 +694,18 @@ export async function getExamResult(examId: string) {
     .limit(1)
     .maybeSingle();
 
-  return data;
+  if (!session) return null;
+
+  // Per-question breakdown: хариулт + асуулт мэдээлэл
+  const { data: answers } = await supabase
+    .from("answers")
+    .select(
+      "id, answer, score, is_correct, feedback, questions(id, type, content, correct_answer, points, order_index, explanation)"
+    )
+    .eq("session_id", session.id)
+    .order("questions(order_index)", { ascending: true });
+
+  return { ...session, answers: answers ?? [] };
 }
 
 /**
