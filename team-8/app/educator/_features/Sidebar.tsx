@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Users,
   CalendarDays,
+  UserCircle2,
   LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/educator/groups", label: "Бүлгүүд", icon: Users },
   { href: "/educator/grading", label: "Дүн шалгах", icon: CheckSquare },
   { href: "/educator/schedule", label: "Хуваарь", icon: CalendarDays },
+  { href: "/educator/profile", label: "Профайл", icon: UserCircle2 },
 ];
 
 export default function Sidebar() {
@@ -42,7 +44,9 @@ export default function Sidebar() {
           {ALL_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             // Checks if current path matches the link
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/educator" && pathname.startsWith(item.href));
 
             return (
               <Link

@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { logout } from "@/lib/auth/actions";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -24,6 +25,12 @@ const roleColors: Record<string, string> = {
   student: "bg-blue-100 text-blue-700",
   teacher: "bg-green-100 text-green-700",
   admin: "bg-purple-100 text-purple-700",
+};
+
+const profilePaths: Record<string, string> = {
+  student: "/student/profile",
+  teacher: "/educator/profile",
+  admin: "/admin",
 };
 
 export function DashboardHeader({ profile }: { profile: Profile }) {
@@ -50,6 +57,9 @@ export function DashboardHeader({ profile }: { profile: Profile }) {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-9 w-9 rounded-full">
               <Avatar className="h-9 w-9">
+                {profile.avatar_url ? (
+                  <AvatarImage src={profile.avatar_url} alt={profile.full_name || profile.email} />
+                ) : null}
                 <AvatarFallback>{initials}</AvatarFallback>
               </Avatar>
             </Button>
@@ -60,6 +70,11 @@ export function DashboardHeader({ profile }: { profile: Profile }) {
               <p className="text-xs text-muted-foreground">{profile.email}</p>
             </div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href={profilePaths[profile.role] ?? "/"}>
+                Профайл
+              </Link>
+            </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer text-destructive"
               onClick={async () => {

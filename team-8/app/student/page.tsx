@@ -63,9 +63,9 @@ export default async function StudentDashboard() {
                 Эхлэх цаг болон үргэлжлэх хугацааг шалгана уу
               </CardDescription>
             </div>
-            <Link href="/student/exams">
+            <Link href="/student/schedule">
               <Button variant="outline" size="sm">
-                Бүгдийг харах
+                Хуваарь харах
               </Button>
             </Link>
           </CardHeader>

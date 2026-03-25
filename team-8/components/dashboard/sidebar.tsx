@@ -14,14 +14,18 @@ const navItems: Record<UserRole, NavItem[]> = {
   student: [
     { label: "Хянах самбар", href: "/student" },
     { label: "Шалгалтууд", href: "/student/exams" },
+    { label: "Миний хуваарь", href: "/student/schedule" },
     { label: "Үр дүн", href: "/student/results" },
+    { label: "Профайл", href: "/student/profile" },
   ],
   teacher: [
     { label: "Хянах самбар", href: "/educator" },
     { label: "Шалгалт удирдах", href: "/educator/exams" },
+    { label: "Хуваарь", href: "/educator/schedule" },
     { label: "Асуултын сан", href: "/educator/question-bank" },
     { label: "Бүлгүүд", href: "/educator/groups" },
     { label: "Дүн", href: "/educator/grading" },
+    { label: "Профайл", href: "/educator/profile" },
   ],
   admin: [
     { label: "Хянах самбар", href: "/admin" },

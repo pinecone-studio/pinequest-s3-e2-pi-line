@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -118,6 +118,9 @@ function conflictLabel(c: ConflictInfo): string {
 
 export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
   const [now, setNow] = useState<number | null>(null);
+  const [filter, setFilter] = useState<
+    "all" | "today" | "next7" | "conflicts" | "live"
+  >("all");
 
   useEffect(() => {
     const updateNow = () => setNow(Date.now());
@@ -127,6 +130,30 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  const filteredRows = useMemo(() => {
+    if (now === null) return rows;
+
+    const today = new Date(now).toLocaleDateString("en-CA", {
+      timeZone: "Asia/Ulaanbaatar",
+    });
+
+    return rows.filter((row) => {
+      const start = new Date(row.start_time).getTime();
+      const end = new Date(row.end_time).getTime();
+      const rowDate = new Date(row.start_time).toLocaleDateString("en-CA", {
+        timeZone: "Asia/Ulaanbaatar",
+      });
+
+      if (filter === "today") return rowDate === today;
+      if (filter === "next7") {
+        return start >= now && start <= now + 7 * 24 * 60 * 60 * 1000;
+      }
+      if (filter === "conflicts") return row.conflicts.length > 0;
+      if (filter === "live") return now >= start && now <= end;
+      return true;
+    });
+  }, [filter, now, rows]);
 
   if (rows.length === 0) {
     return (
@@ -138,10 +165,98 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
     );
   }
 
-  const grouped = groupByDate(rows);
+  const todayCount =
+    now === null
+      ? 0
+      : rows.filter((row) => {
+          const rowDate = new Date(row.start_time).toLocaleDateString("en-CA", {
+            timeZone: "Asia/Ulaanbaatar",
+          });
+          const today = new Date(now).toLocaleDateString("en-CA", {
+            timeZone: "Asia/Ulaanbaatar",
+          });
+          return rowDate === today;
+        }).length;
+  const liveCount =
+    now === null
+      ? 0
+      : rows.filter((row) => {
+          const start = new Date(row.start_time).getTime();
+          const end = new Date(row.end_time).getTime();
+          return now >= start && now <= end;
+        }).length;
+  const nextSevenDaysCount =
+    now === null
+      ? 0
+      : rows.filter((row) => {
+          const start = new Date(row.start_time).getTime();
+          return start >= now && start <= now + 7 * 24 * 60 * 60 * 1000;
+        }).length;
+  const conflictCount = rows.filter((row) => row.conflicts.length > 0).length;
+
+  const grouped = groupByDate(filteredRows);
 
   return (
     <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardContent className="space-y-1 py-4">
+            <p className="text-xs text-muted-foreground">Өнөөдөр</p>
+            <p className="text-3xl font-semibold">{todayCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-1 py-4">
+            <p className="text-xs text-muted-foreground">Явагдаж буй</p>
+            <p className="text-3xl font-semibold">{liveCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-1 py-4">
+            <p className="text-xs text-muted-foreground">7 хоногийн дотор</p>
+            <p className="text-3xl font-semibold">{nextSevenDaysCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="space-y-1 py-4">
+            <p className="text-xs text-muted-foreground">Давхцал</p>
+            <p className="text-3xl font-semibold">{conflictCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {[
+          { key: "all", label: "Бүгд" },
+          { key: "today", label: "Өнөөдөр" },
+          { key: "next7", label: "7 хоног" },
+          { key: "live", label: "Явагдаж буй" },
+          { key: "conflicts", label: "Давхцалтай" },
+        ].map((item) => (
+          <Button
+            key={item.key}
+            type="button"
+            size="sm"
+            variant={filter === item.key ? "secondary" : "outline"}
+            onClick={() =>
+              setFilter(
+                item.key as "all" | "today" | "next7" | "conflicts" | "live"
+              )
+            }
+          >
+            {item.label}
+          </Button>
+        ))}
+      </div>
+
+      {filteredRows.length === 0 && (
+        <Card>
+          <CardContent className="py-10 text-center text-muted-foreground">
+            Энэ шүүлтүүрт тохирох шалгалт алга.
+          </CardContent>
+        </Card>
+      )}
+
       {[...grouped.entries()].map(([dateKey, exams]) => (
         <div key={dateKey}>
           <h3 className="mb-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
