@@ -229,20 +229,6 @@ export default function ExamForm({
   const endCalendarDays = buildCalendarDays(endMonth);
 
   useEffect(() => {
-    setFieldErrors((prev) => ({
-      ...prev,
-      subject: subjectId !== "__none" ? undefined : prev.subject,
-      startDate: startDate ? undefined : prev.startDate,
-      startTime: startClock ? undefined : prev.startTime,
-      endDate: endDate ? undefined : prev.endDate,
-      endTime: endClock ? undefined : prev.endTime,
-      duration:
-        durationMinutes && Number(durationMinutes) > 0 ? undefined : prev.duration,
-      title: title.trim() ? undefined : prev.title,
-    }));
-  }, [durationMinutes, endClock, endDate, startClock, startDate, subjectId, title]);
-
-  useEffect(() => {
     function onPointerDown(event: MouseEvent | TouchEvent) {
       if (!openPicker) return;
 
@@ -267,6 +253,30 @@ export default function ExamForm({
       document.removeEventListener("touchstart", onPointerDown);
     };
   }, [openPicker]);
+
+  function clearFieldError(field: keyof FieldErrors) {
+    setFieldErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  }
+
+  function updateTitle(value: string) {
+    setTitle(value);
+    if (value.trim()) clearFieldError("title");
+  }
+
+  function updateDurationMinutes(value: string) {
+    setDurationMinutes(value);
+    if (value && Number(value) > 0) clearFieldError("duration");
+  }
+
+  function updateStartDate(value: string) {
+    setStartDate(value);
+    if (value) clearFieldError("startDate");
+  }
+
+  function updateEndDate(value: string) {
+    setEndDate(value);
+    if (value) clearFieldError("endDate");
+  }
   function getGroupsForSubject(nextSubjectId: string) {
     if (nextSubjectId === "__none") return [];
     return groups.filter(
@@ -326,6 +336,7 @@ export default function ExamForm({
   function handleSubjectChange(nextSubjectId: string) {
     const nextGroups = getGroupsForSubject(nextSubjectId);
     setSubjectId(nextSubjectId);
+    if (nextSubjectId !== "__none") clearFieldError("subject");
     setSelectedGroupIds((prev) =>
       prev.filter((groupId) => nextGroups.some((group) => group.id === groupId))
     );
@@ -349,6 +360,7 @@ export default function ExamForm({
         ? cycleValue(startTimeParts.minute, 59, step)
         : startTimeParts.minute;
     setStartClock(buildTimeValue(hour, minute));
+    clearFieldError("startTime");
   }
 
   function adjustEndTime(part: "hour" | "minute", step: 1 | -1) {
@@ -361,6 +373,7 @@ export default function ExamForm({
         ? cycleValue(endTimeParts.minute, 59, step)
         : endTimeParts.minute;
     setEndClock(buildTimeValue(hour, minute));
+    clearFieldError("endTime");
   }
 
   function handleStartTimeInput(part: "hour" | "minute", value: string) {
@@ -373,6 +386,7 @@ export default function ExamForm({
         ? sanitizeTypingTimePart(value, 59)
         : sanitizeTypingTimePart(startTimeParts.minute, 59);
     setStartClock(buildTimeValue(hour, minute));
+    clearFieldError("startTime");
   }
 
   function handleEndTimeInput(part: "hour" | "minute", value: string) {
@@ -385,6 +399,7 @@ export default function ExamForm({
         ? sanitizeTypingTimePart(value, 59)
         : sanitizeTypingTimePart(endTimeParts.minute, 59);
     setEndClock(buildTimeValue(hour, minute));
+    clearFieldError("endTime");
   }
 
   function finalizeStartTimePart(part: "hour" | "minute") {
@@ -397,6 +412,7 @@ export default function ExamForm({
         ? normalizeTimePart(startTimeParts.minute, 59)
         : normalizeTimePart(startTimeParts.minute, 59);
     setStartClock(buildTimeValue(hour, minute));
+    clearFieldError("startTime");
   }
 
   function finalizeEndTimePart(part: "hour" | "minute") {
@@ -409,6 +425,7 @@ export default function ExamForm({
         ? normalizeTimePart(endTimeParts.minute, 59)
         : normalizeTimePart(endTimeParts.minute, 59);
     setEndClock(buildTimeValue(hour, minute));
+    clearFieldError("endTime");
   }
 
   async function handleSubmit(formData: FormData) {
@@ -483,7 +500,7 @@ export default function ExamForm({
               name="title"
               placeholder="Жишээ: Математик - 1-р улирал"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => updateTitle(e.target.value)}
               className={fieldErrors.title ? "border-destructive" : undefined}
               required
             />
@@ -682,7 +699,7 @@ export default function ExamForm({
                               key={`${day.value}-${day.day}`}
                               type="button"
                               onClick={() => {
-                                setStartDate(day.value);
+                                updateStartDate(day.value);
                                 setOpenPicker(null);
                               }}
                               className={`h-10 rounded-xl text-sm transition-[transform,box-shadow,background-color,color,border-color] duration-150 ease-out hover:-translate-y-px hover:shadow-sm active:translate-y-0 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
@@ -861,7 +878,7 @@ export default function ExamForm({
                               key={`${day.value}-${day.day}`}
                               type="button"
                               onClick={() => {
-                                setEndDate(day.value);
+                                updateEndDate(day.value);
                                 setOpenPicker(null);
                               }}
                               className={`h-10 rounded-xl text-sm transition-[transform,box-shadow,background-color,color,border-color] duration-150 ease-out hover:-translate-y-px hover:shadow-sm active:translate-y-0 active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
@@ -993,7 +1010,7 @@ export default function ExamForm({
                   max="300"
                   placeholder="Жишээ: 45"
                   value={durationMinutes}
-                  onChange={(e) => setDurationMinutes(e.target.value)}
+                  onChange={(e) => updateDurationMinutes(e.target.value)}
                   className={fieldErrors.duration ? "border-destructive" : undefined}
                   required
                 />
