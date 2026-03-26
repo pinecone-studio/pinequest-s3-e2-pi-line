@@ -664,7 +664,7 @@ async function finalizeSessionAttempt(
     const [{ data: answers }, { data: questions }] = await Promise.all([
       supabase
         .from("answers")
-        .select("id, question_id, answer, score")
+        .select("session_id, question_id, user_id, answer, score")
         .eq("session_id", sessionId),
       snapshot
         ? Promise.resolve({
@@ -691,7 +691,10 @@ async function finalizeSessionAttempt(
       );
 
     const gradedAnswers: Array<{
-      id: string;
+      session_id: string;
+      question_id: string;
+      user_id: string;
+      answer: string | null;
       is_correct: boolean;
       score: number;
     }> = [];
@@ -711,7 +714,14 @@ async function finalizeSessionAttempt(
           normalizeTextAnswer(question.correct_answer);
         const score = isCorrect ? Number(question.points ?? 0) : 0;
         totalScore += score;
-        gradedAnswers.push({ id: ans.id, is_correct: isCorrect, score });
+        gradedAnswers.push({
+          session_id: String(ans.session_id),
+          question_id: String(ans.question_id),
+          user_id: String(ans.user_id),
+          answer: (ans.answer as string | null) ?? null,
+          is_correct: isCorrect,
+          score,
+        });
       } else if (question.type === "multiple_response") {
         const isCorrect = areArraysEqual(
           parseAnswerArray(ans.answer),
@@ -719,7 +729,14 @@ async function finalizeSessionAttempt(
         );
         const score = isCorrect ? Number(question.points ?? 0) : 0;
         totalScore += score;
-        gradedAnswers.push({ id: ans.id, is_correct: isCorrect, score });
+        gradedAnswers.push({
+          session_id: String(ans.session_id),
+          question_id: String(ans.question_id),
+          user_id: String(ans.user_id),
+          answer: (ans.answer as string | null) ?? null,
+          is_correct: isCorrect,
+          score,
+        });
       } else if (question.type === "matching") {
         let submittedAnswer: Record<string, string> = {};
 
@@ -741,7 +758,14 @@ async function finalizeSessionAttempt(
           );
         const score = isCorrect ? Number(question.points ?? 0) : 0;
         totalScore += score;
-        gradedAnswers.push({ id: ans.id, is_correct: isCorrect, score });
+        gradedAnswers.push({
+          session_id: String(ans.session_id),
+          question_id: String(ans.question_id),
+          user_id: String(ans.user_id),
+          answer: (ans.answer as string | null) ?? null,
+          is_correct: isCorrect,
+          score,
+        });
       } else {
         totalScore += Number(ans.score ?? 0);
       }
@@ -751,21 +775,15 @@ async function finalizeSessionAttempt(
       const BATCH_SIZE = 50;
       for (let i = 0; i < gradedAnswers.length; i += BATCH_SIZE) {
         const batch = gradedAnswers.slice(i, i + BATCH_SIZE);
-        const results = await Promise.all(
-          batch.map((gradedAnswer) =>
-            supabase
-              .from("answers")
-              .update({
-                is_correct: gradedAnswer.is_correct,
-                score: gradedAnswer.score,
-              })
-              .eq("id", gradedAnswer.id)
-          )
-        );
-        const failedUpdate = results.find((result) => result.error);
-        if (failedUpdate?.error) {
+        const { error: batchUpsertError } = await supabase
+          .from("answers")
+          .upsert(batch, {
+            onConflict: "session_id,question_id",
+          });
+
+        if (batchUpsertError) {
           return {
-            error: `Хариултын оноо хадгалахад алдаа: ${failedUpdate.error.message}`,
+            error: `Хариултын оноо хадгалахад алдаа: ${batchUpsertError.message}`,
           };
         }
       }
