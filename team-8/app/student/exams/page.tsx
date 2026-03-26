@@ -67,10 +67,11 @@ export default async function StudentExamsPage({
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {exams.map((exam) => {
             const lifecycle = String(exam.myLifecycleStatus ?? "");
+            const persistedSessionStatus = String(exam.mySessionStatus ?? "");
             const isResultAvailable =
-              lifecycle === "submitted" ||
-              lifecycle === "graded" ||
-              lifecycle === "timed_out";
+              persistedSessionStatus === "submitted" ||
+              persistedSessionStatus === "graded" ||
+              persistedSessionStatus === "timed_out";
             const isInProgress = lifecycle === "in_progress";
             const isAvailable =
               lifecycle === "available" || lifecycle === "retake_available";

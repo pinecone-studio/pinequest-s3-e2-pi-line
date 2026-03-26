@@ -19,6 +19,15 @@ type StudentUpcomingExam = {
   lifecycle_label: string;
 };
 
+type StudentDashboardExam = {
+  id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  max_attempts: number;
+};
+
 export async function getEducatorStats() {
   const supabase = await createClient();
   const {
@@ -220,17 +229,9 @@ export async function getStudentStats() {
     supabase
       .from("exam_recipients")
       .select(
-        `
-        exam_id,
-        access_start_time,
-        access_end_time,
-        max_attempts_override,
-        excused_at,
-        exams!inner(id, title, start_time, end_time, duration_minutes, max_attempts)
-      `
+        "exam_id, access_start_time, access_end_time, max_attempts_override, excused_at"
       )
-      .eq("student_id", user.id)
-      .eq("exams.is_published", true),
+      .eq("student_id", user.id),
     supabase
       .from("exam_sessions")
       .select(
@@ -250,6 +251,29 @@ export async function getStudentStats() {
   }
   const sessions = sessionsRes.data ?? [];
   const assignedRows = assignedRowsRes.data ?? [];
+  const assignedExamIds = [...new Set(assignedRows.map((row) => row.exam_id))];
+  const { data: examRows, error: examRowsError } =
+    assignedExamIds.length > 0
+      ? await supabase
+          .from("exams")
+          .select("id, title, start_time, end_time, duration_minutes, max_attempts")
+          .eq("is_published", true)
+          .in("id", assignedExamIds)
+      : { data: [], error: null };
+
+  if (examRowsError) {
+    return {
+      activeExams: 0,
+      completedExams: 0,
+      avgScore: null,
+      upcomingExams: [],
+      recentResults: [],
+    };
+  }
+
+  const examMap = new Map<string, StudentDashboardExam>(
+    ((examRows ?? []) as StudentDashboardExam[]).map((exam) => [String(exam.id), exam])
+  );
   const finishedSessions = sessions.filter((session) =>
     ["submitted", "graded", "timed_out"].includes(String(session.status))
   );
@@ -285,8 +309,7 @@ export async function getStudentStats() {
   const decoratedExamMap = new Map<string, StudentUpcomingExam>();
 
   for (const row of assignedRows) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const exam = getRelationObject(row.exams as any);
+    const exam = examMap.get(String(row.exam_id));
     if (!exam) continue;
 
     const access = getEffectiveExamAccess(
@@ -307,11 +330,11 @@ export async function getStudentStats() {
       },
       recipient: row,
       latestSessionStatus:
-        latestSessionByExam.get(exam.id)?.status ?? null,
+        latestSessionByExam.get(String(exam.id))?.status ?? null,
       latestAttemptNumber:
-        latestSessionByExam.get(exam.id)?.attemptNumber ?? 0,
+        latestSessionByExam.get(String(exam.id))?.attemptNumber ?? 0,
       latestSessionStartedAt:
-        latestSessionByExam.get(exam.id)?.startedAt ?? null,
+        latestSessionByExam.get(String(exam.id))?.startedAt ?? null,
       nowMs,
     });
 

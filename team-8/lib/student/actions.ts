@@ -74,13 +74,13 @@ type AssignedExamRow = {
   exams?: Record<string, unknown> | Record<string, unknown>[] | null;
 };
 
+type AssignedExamAccessRow = Omit<AssignedExamRow, "exams">;
+
 type StudentExamAttemptSummary = {
   status: string | null;
   attemptNumber: number;
   startedAt: string | null;
 };
-
-type StudentExamRecord = Record<string, unknown>;
 
 export type StudentAssignedExam = StudentExamBase & {
   mySessionStatus: string | null;
@@ -178,28 +178,43 @@ async function getAssignedPublishedExamRows(
   userId: string,
   examId?: string
 ) {
-  let query = supabase
+  let recipientQuery = supabase
     .from("exam_recipients")
     .select(
-      `
-      exam_id,
-      access_start_time,
-      access_end_time,
-      max_attempts_override,
-      excused_at,
-      status_note,
-      exams!inner (${STUDENT_EXAM_SELECT})
-    `
+      "exam_id, access_start_time, access_end_time, max_attempts_override, excused_at, status_note"
     )
-    .eq("student_id", userId)
-    .eq("exams.is_published", true);
+    .eq("student_id", userId);
 
   if (examId) {
-    query = query.eq("exam_id", examId);
+    recipientQuery = recipientQuery.eq("exam_id", examId);
   }
 
-  const { data } = await query;
-  return ((data ?? []) as unknown) as AssignedExamRow[];
+  const { data: recipientRows } = await recipientQuery;
+  const baseRows = ((recipientRows ?? []) as unknown) as AssignedExamAccessRow[];
+  if (baseRows.length === 0) return [];
+
+  const examIds = [...new Set(baseRows.map((row) => row.exam_id))];
+  const { data: exams } = await supabase
+    .from("exams")
+    .select(STUDENT_EXAM_SELECT)
+    .eq("is_published", true)
+    .in("id", examIds);
+
+  const examMap = new Map<string, StudentExamBase>(
+    ((exams ?? []) as StudentExamBase[]).map((exam) => [String(exam.id), exam])
+  );
+
+  const hydratedRows: AssignedExamRow[] = [];
+  for (const row of baseRows) {
+    const exam = examMap.get(String(row.exam_id));
+    if (!exam) continue;
+    hydratedRows.push({
+      ...row,
+      exams: exam,
+    });
+  }
+
+  return hydratedRows;
 }
 
 function mergeAssignedExamAccess(
@@ -423,22 +438,14 @@ export async function getStudentExams() {
   if (!user) return [];
 
   const rows = await getAssignedPublishedExamRows(supabase, user.id);
-  const rawExams = rows
-    .map((row) => getRelationObject(row.exams))
-    .filter((exam): exam is StudentExamRecord => Boolean(exam));
-
-  const uniqueExams = Array.from(
-    new Map(rawExams.map((exam) => [String(exam.id), exam])).values()
-  );
-
-  if (uniqueExams.length === 0) return [];
+  if (rows.length === 0) return [];
 
   // Хамгийн сүүлийн session status-г нэмэх
   const { data: sessions } = await supabase
     .from("exam_sessions")
     .select("exam_id, status, attempt_number, started_at")
     .eq("user_id", user.id)
-    .in("exam_id", uniqueExams.map((e) => e.id as string))
+    .in("exam_id", rows.map((row) => row.exam_id))
     .order("attempt_number", { ascending: false });
 
   const sessionMap = new Map<string, StudentExamAttemptSummary>();
@@ -452,19 +459,14 @@ export async function getStudentExams() {
     }
   }
 
-  const rowMap = new Map(rows.map((row) => [row.exam_id, row]));
-
-  return uniqueExams
-    .map((exam) =>
-      mergeAssignedExamAccess(
-        rowMap.get(String(exam.id)) as AssignedExamRow,
-        sessionMap.get(String(exam.id)) ?? null
-      )
+  return rows
+    .map((row) =>
+      mergeAssignedExamAccess(row, sessionMap.get(String(row.exam_id)) ?? null)
     )
     .filter(
       (
         exam
-      ): exam is NonNullable<ReturnType<typeof mergeAssignedExamAccess>> =>
+      ): exam is StudentAssignedExam =>
         Boolean(exam)
     )
     .sort(
@@ -662,7 +664,7 @@ async function finalizeSessionAttempt(
     const [{ data: answers }, { data: questions }] = await Promise.all([
       supabase
         .from("answers")
-        .select("id, question_id, answer, score")
+        .select("session_id, question_id, user_id, answer, score")
         .eq("session_id", sessionId),
       snapshot
         ? Promise.resolve({
@@ -689,7 +691,10 @@ async function finalizeSessionAttempt(
       );
 
     const gradedAnswers: Array<{
-      id: string;
+      session_id: string;
+      question_id: string;
+      user_id: string;
+      answer: string | null;
       is_correct: boolean;
       score: number;
     }> = [];
@@ -709,7 +714,14 @@ async function finalizeSessionAttempt(
           normalizeTextAnswer(question.correct_answer);
         const score = isCorrect ? Number(question.points ?? 0) : 0;
         totalScore += score;
-        gradedAnswers.push({ id: ans.id, is_correct: isCorrect, score });
+        gradedAnswers.push({
+          session_id: String(ans.session_id),
+          question_id: String(ans.question_id),
+          user_id: String(ans.user_id),
+          answer: (ans.answer as string | null) ?? null,
+          is_correct: isCorrect,
+          score,
+        });
       } else if (question.type === "multiple_response") {
         const isCorrect = areArraysEqual(
           parseAnswerArray(ans.answer),
@@ -717,7 +729,14 @@ async function finalizeSessionAttempt(
         );
         const score = isCorrect ? Number(question.points ?? 0) : 0;
         totalScore += score;
-        gradedAnswers.push({ id: ans.id, is_correct: isCorrect, score });
+        gradedAnswers.push({
+          session_id: String(ans.session_id),
+          question_id: String(ans.question_id),
+          user_id: String(ans.user_id),
+          answer: (ans.answer as string | null) ?? null,
+          is_correct: isCorrect,
+          score,
+        });
       } else if (question.type === "matching") {
         let submittedAnswer: Record<string, string> = {};
 
@@ -739,7 +758,14 @@ async function finalizeSessionAttempt(
           );
         const score = isCorrect ? Number(question.points ?? 0) : 0;
         totalScore += score;
-        gradedAnswers.push({ id: ans.id, is_correct: isCorrect, score });
+        gradedAnswers.push({
+          session_id: String(ans.session_id),
+          question_id: String(ans.question_id),
+          user_id: String(ans.user_id),
+          answer: (ans.answer as string | null) ?? null,
+          is_correct: isCorrect,
+          score,
+        });
       } else {
         totalScore += Number(ans.score ?? 0);
       }
@@ -749,21 +775,15 @@ async function finalizeSessionAttempt(
       const BATCH_SIZE = 50;
       for (let i = 0; i < gradedAnswers.length; i += BATCH_SIZE) {
         const batch = gradedAnswers.slice(i, i + BATCH_SIZE);
-        const results = await Promise.all(
-          batch.map((gradedAnswer) =>
-            supabase
-              .from("answers")
-              .update({
-                is_correct: gradedAnswer.is_correct,
-                score: gradedAnswer.score,
-              })
-              .eq("id", gradedAnswer.id)
-          )
-        );
-        const failedUpdate = results.find((result) => result.error);
-        if (failedUpdate?.error) {
+        const { error: batchUpsertError } = await supabase
+          .from("answers")
+          .upsert(batch, {
+            onConflict: "session_id,question_id",
+          });
+
+        if (batchUpsertError) {
           return {
-            error: `Хариултын оноо хадгалахад алдаа: ${failedUpdate.error.message}`,
+            error: `Хариултын оноо хадгалахад алдаа: ${batchUpsertError.message}`,
           };
         }
       }
@@ -838,46 +858,6 @@ async function finalizeSessionAttempt(
     };
   } finally {
     await redis.del(lockKey);
-  }
-}
-
-async function finalizeExpiredSessionsForStudent(
-  supabase: SupabaseServerClient,
-  userId: string,
-  examId?: string
-) {
-  let query = supabase
-    .from("exam_sessions")
-    .select("id, exam_id, started_at")
-    .eq("user_id", userId)
-    .eq("status", "in_progress")
-    .order("started_at", { ascending: false });
-
-  if (examId) {
-    query = query.eq("exam_id", examId);
-  }
-
-  const { data: sessions } = await query;
-  if (!sessions || sessions.length === 0) return;
-
-  for (const session of sessions) {
-    const exam = await getEffectiveExamAccessForStudent(
-      supabase,
-      userId,
-      session.exam_id
-    );
-
-    if (
-      exam &&
-      isSessionExpiredForExam(session.started_at ?? null, exam)
-    ) {
-      await finalizeSessionAttempt(supabase, {
-        sessionId: session.id,
-        examId: session.exam_id,
-        userId,
-        reason: "timeout",
-      });
-    }
   }
 }
 
@@ -1237,18 +1217,15 @@ export async function getExamResult(examId: string) {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  await finalizeExpiredSessionsForStudent(supabase, user.id, examId);
-
-  const snapshot = await getStoredPublishedExamSnapshot(supabase, examId);
-  const snapshotQuestionMap = getSnapshotQuestionMap(snapshot);
-
-  const { data: session, error: sessionError } = await supabase
+  const { data: initialSession, error: sessionError } = await supabase
     .from("exam_sessions")
-    .select("id, status, total_score, max_score, submitted_at, attempt_number, exam_id, exams(title, passing_score)")
+    .select(
+      "id, status, started_at, total_score, max_score, submitted_at, attempt_number, exam_id, exams(title, passing_score)"
+    )
     .eq("exam_id", examId)
     .eq("user_id", user.id)
-    .in("status", ["submitted", "graded", "timed_out"])
-    .order("submitted_at", { ascending: false })
+    .in("status", ["in_progress", "submitted", "graded", "timed_out"])
+    .order("attempt_number", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -1257,7 +1234,56 @@ export async function getExamResult(examId: string) {
     return null;
   }
 
+  let session = initialSession;
   if (!session) return null;
+
+  if (session.status === "in_progress") {
+    const exam = await getEffectiveExamAccessForStudent(supabase, user.id, examId);
+    if (!exam) return null;
+
+    if (!isSessionExpiredForExam(session.started_at ?? null, exam)) {
+      return null;
+    }
+
+    const finalized = await finalizeSessionAttempt(supabase, {
+      sessionId: session.id,
+      examId,
+      userId: user.id,
+      reason: "timeout",
+    });
+
+    if ("error" in finalized) {
+      console.error("[getExamResult] finalize timeout error:", finalized.error);
+      return null;
+    }
+
+    const { data: refreshedSession, error: refreshedSessionError } = await supabase
+      .from("exam_sessions")
+      .select(
+        "id, status, started_at, total_score, max_score, submitted_at, attempt_number, exam_id, exams(title, passing_score)"
+      )
+      .eq("id", session.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (refreshedSessionError) {
+      console.error(
+        "[getExamResult] refreshed session query error:",
+        refreshedSessionError.message
+      );
+      return null;
+    }
+
+    if (!refreshedSession) return null;
+    session = refreshedSession;
+  }
+
+  if (!["submitted", "graded", "timed_out"].includes(String(session.status))) {
+    return null;
+  }
+
+  const snapshot = await getStoredPublishedExamSnapshot(supabase, examId);
+  const snapshotQuestionMap = getSnapshotQuestionMap(snapshot);
 
   // Per-question breakdown: хариулт + асуулт мэдээлэл
   const { data: answers } = await supabase

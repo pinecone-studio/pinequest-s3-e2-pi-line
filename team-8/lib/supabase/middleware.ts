@@ -2,11 +2,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const publicPaths = ["/", "/login", "/register"];
-const rolePaths: Record<string, string[]> = {
-  student: ["/student"],
-  teacher: ["/educator"],
-  admin: ["/admin", "/educator"],
-};
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -33,8 +28,9 @@ export async function updateSession(request: NextRequest) {
   );
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const pathname = request.nextUrl.pathname;
   const isPublicPath = publicPaths.some(
@@ -52,43 +48,20 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Logged in user visiting login/register → redirect to their dashboard
+  // Logged in user visiting login/register → redirect to app root.
+  // Role-specific routing is handled by app/page.tsx and layouts, which avoids
+  // an extra profiles query on every protected request in middleware.
   if (user && (pathname === "/login" || pathname === "/register")) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const role = profile?.role || "student";
     const url = request.nextUrl.clone();
-    url.pathname =
-      role === "teacher"
-        ? "/educator"
-        : role === "admin"
-          ? "/admin"
-          : "/student";
+    url.pathname = "/";
     return NextResponse.redirect(url);
   }
 
-  // Logged in user → check role access
+  // Logged-in users are allowed through here.
+  // Role-specific authorization is enforced in route layouts/pages, which
+  // avoids repeated profiles lookups in middleware for every navigation.
   if (user && !isPublicPath) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    const role = profile?.role || "student";
-    const allowedPaths = rolePaths[role] || ["/student"];
-
-    const hasAccess = allowedPaths.some((p) => pathname.startsWith(p));
-
-    if (!hasAccess) {
-      const url = request.nextUrl.clone();
-      url.pathname = allowedPaths[0];
-      return NextResponse.redirect(url);
-    }
+    return supabaseResponse;
   }
 
   return supabaseResponse;
