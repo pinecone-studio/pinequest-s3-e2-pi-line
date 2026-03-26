@@ -32,7 +32,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
     label: "Асуултын сан",
     icon: Book,
   },
-  { href: "/educator/grading", label: "Шинэ асуулт", icon: Plus },
+  { href: "/educator/new-question", label: "Шинэ асуулт", icon: Plus },
   {
     href: "/educator/create-exam",
     label: "Шинэ шалгалт",
