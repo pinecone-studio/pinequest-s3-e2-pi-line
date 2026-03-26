@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation"; // Added to handle the black background active state
 import { useState } from "react";
 import {
-  CheckSquare,
   CalendarDays,
   LucideIcon,
   ChevronLeft,
@@ -14,6 +13,7 @@ import {
   FileSpreadsheet,
   LogOut,
   FilePlusCorner,
+  Users,
 } from "lucide-react";
 import Logo from "@/app/_icons/Logo";
 import SideBarImage from "@/app/_icons/SideBarImage";
@@ -34,7 +34,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
     icon: FilePlusCorner,
   },
   { href: "/educator/groups", label: "Шалгалтууд", icon: FileSpreadsheet },
-  { href: "/educator/grading", label: "Дүн шалгах", icon: CheckSquare },
+  { href: "/educator/grading", label: "Бүлгүүд", icon: Users },
   { href: "/educator/schedule", label: "Хуваарь", icon: CalendarDays },
 ];
 
@@ -43,18 +43,33 @@ const MENU_NAV_ITEMS: NavItem[] = ALL_NAV_ITEMS;
 export default function Sidebar() {
   const pathname = usePathname();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
-    <aside className="flex flex-col h-auto w-65  pt-6 px-3 flex-col border-r border-gray-100 bg-white justify-between shadow-2xl">
+    <aside
+      className={`flex h-screen flex-col justify-between rounded-xl  bg-white pt-6 shadow-xl transition-all duration-200 ${
+        isCollapsed ? "w-[70px] px-2" : "w-[260px] px-4"
+      }`}
+    >
       {/* Navigation Items */}
-      <div className="flex flex-col gap-6 ">
-        <div className="flex justify-between">
-          <Logo />
-          <ChevronLeft />
+      <div className="flex flex-col gap-6">
+        <div className="flex items-start justify-between">
+          {!isCollapsed ? <Logo /> : <div className="h-6 w-6" />}
+          <button
+            type="button"
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            className="rounded-lg  p-1 text-gray-600 transition-colors hover:border-[#4078C1] hover:text-[#4078C1]"
+          >
+            <ChevronLeft
+              size={18}
+              className={`transition-transform duration-200 ${
+                isCollapsed ? "rotate-180" : ""
+              }`}
+            />
+          </button>
         </div>
-        <nav className="flex flex-col gap-3">
-          {" "}
-          {/* Tighter spacing between items */}
+        <nav className="flex flex-col gap-2">
           {MENU_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             // Checks if current path matches the link
@@ -64,31 +79,41 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-4 rounded-[10px] leading-tight px-4 py-3.5 text-[16px] font-medium transition-all duration-200 ${
+                className={`group flex items-center rounded-[12px] px-4 py-3 text-[15px] font-semibold transition-all duration-200 ${
                   isActive
-                    ? "bg-[#ECF1F9] border-2 border-[#4078C1] text-[#4078C1] shadow-sm"
-                    : "text-[#7F7F7F] hover:text-[#4078C1]"
-                }`}
+                    ? "border-2 border-[#4078C1] bg-[#ECF1F9] text-[#4078C1] shadow-sm"
+                    : "text-[#7F7F7F] hover:bg-[#F4F6FA] hover:text-[#4078C1]"
+                } ${isCollapsed ? "justify-center gap-0 px-3" : "gap-4"}`}
               >
                 <Icon
                   size={20}
                   strokeWidth={isActive ? 2.5 : 2}
-                  className={`${isActive ? "text-[#4078C1]" : "text-[#575555] hover:text-[#4078C1]"}`}
+                  className={`${
+                    isActive
+                      ? "text-[#4078C1]"
+                      : "text-[#575555] group-hover:text-[#4078C1]"
+                  }`}
                 />
-                <span>{item.label}</span>
+                {!isCollapsed && <span>{item.label}</span>}
               </Link>
             );
           })}
         </nav>
       </div>
 
-      <div className="mt-auto flex items-center justify-between ">
-        <div className="flex items-center gap-4 pl-4">
+      <div className="mt-auto flex items-center justify-between pb-4">
+        <div
+          className={`flex items-center gap-3 ${
+            isCollapsed ? "justify-center pl-0" : "pl-1"
+          }`}
+        >
           <LogOut className="w-7 h-7" />
-          <p className="font-medium text-[#7F7F7F]">Гарах</p>
+          {!isCollapsed && (
+            <p className="text-[15px] font-semibold text-[#7F7F7F]">Гарах</p>
+          )}
         </div>
 
-        <SideBarImage />
+        {!isCollapsed && <SideBarImage />}
       </div>
     </aside>
   );
