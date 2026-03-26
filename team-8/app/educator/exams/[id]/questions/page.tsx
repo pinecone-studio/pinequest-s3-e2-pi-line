@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ExamReadinessPanel from "@/components/exams/exam-readiness-panel";
 import AddQuestionForm from "./_features/AddQuestionForm";
-import PassageManager from "./_features/PassageManager";
 import QuestionImportActions from "./_features/QuestionImportActions";
 import QuestionList from "./_features/QuestionList";
 
@@ -116,14 +115,7 @@ export default async function ExamQuestionsPage({ params }: Props) {
               импортлох боломжгүй.
             </div>
           ) : (
-            <>
-              <PassageManager examId={id} passages={passages} />
-              <AddQuestionForm
-                examId={id}
-                passages={passages}
-                subjectName={exam.subjects?.name ?? null}
-              />
-            </>
+            <AddQuestionForm examId={id} passages={passages} />
           )}
         </div>
       </div>
