@@ -74,13 +74,13 @@ type AssignedExamRow = {
   exams?: Record<string, unknown> | Record<string, unknown>[] | null;
 };
 
+type AssignedExamAccessRow = Omit<AssignedExamRow, "exams">;
+
 type StudentExamAttemptSummary = {
   status: string | null;
   attemptNumber: number;
   startedAt: string | null;
 };
-
-type StudentExamRecord = Record<string, unknown>;
 
 export type StudentAssignedExam = StudentExamBase & {
   mySessionStatus: string | null;
@@ -178,28 +178,43 @@ async function getAssignedPublishedExamRows(
   userId: string,
   examId?: string
 ) {
-  let query = supabase
+  let recipientQuery = supabase
     .from("exam_recipients")
     .select(
-      `
-      exam_id,
-      access_start_time,
-      access_end_time,
-      max_attempts_override,
-      excused_at,
-      status_note,
-      exams!inner (${STUDENT_EXAM_SELECT})
-    `
+      "exam_id, access_start_time, access_end_time, max_attempts_override, excused_at, status_note"
     )
-    .eq("student_id", userId)
-    .eq("exams.is_published", true);
+    .eq("student_id", userId);
 
   if (examId) {
-    query = query.eq("exam_id", examId);
+    recipientQuery = recipientQuery.eq("exam_id", examId);
   }
 
-  const { data } = await query;
-  return ((data ?? []) as unknown) as AssignedExamRow[];
+  const { data: recipientRows } = await recipientQuery;
+  const baseRows = ((recipientRows ?? []) as unknown) as AssignedExamAccessRow[];
+  if (baseRows.length === 0) return [];
+
+  const examIds = [...new Set(baseRows.map((row) => row.exam_id))];
+  const { data: exams } = await supabase
+    .from("exams")
+    .select(STUDENT_EXAM_SELECT)
+    .eq("is_published", true)
+    .in("id", examIds);
+
+  const examMap = new Map<string, StudentExamBase>(
+    ((exams ?? []) as StudentExamBase[]).map((exam) => [String(exam.id), exam])
+  );
+
+  const hydratedRows: AssignedExamRow[] = [];
+  for (const row of baseRows) {
+    const exam = examMap.get(String(row.exam_id));
+    if (!exam) continue;
+    hydratedRows.push({
+      ...row,
+      exams: exam,
+    });
+  }
+
+  return hydratedRows;
 }
 
 function mergeAssignedExamAccess(
@@ -422,25 +437,15 @@ export async function getStudentExams() {
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  await finalizeExpiredSessionsForStudent(supabase, user.id);
-
   const rows = await getAssignedPublishedExamRows(supabase, user.id);
-  const rawExams = rows
-    .map((row) => getRelationObject(row.exams))
-    .filter((exam): exam is StudentExamRecord => Boolean(exam));
-
-  const uniqueExams = Array.from(
-    new Map(rawExams.map((exam) => [String(exam.id), exam])).values()
-  );
-
-  if (uniqueExams.length === 0) return [];
+  if (rows.length === 0) return [];
 
   // Хамгийн сүүлийн session status-г нэмэх
   const { data: sessions } = await supabase
     .from("exam_sessions")
     .select("exam_id, status, attempt_number, started_at")
     .eq("user_id", user.id)
-    .in("exam_id", uniqueExams.map((e) => e.id as string))
+    .in("exam_id", rows.map((row) => row.exam_id))
     .order("attempt_number", { ascending: false });
 
   const sessionMap = new Map<string, StudentExamAttemptSummary>();
@@ -454,19 +459,14 @@ export async function getStudentExams() {
     }
   }
 
-  const rowMap = new Map(rows.map((row) => [row.exam_id, row]));
-
-  return uniqueExams
-    .map((exam) =>
-      mergeAssignedExamAccess(
-        rowMap.get(String(exam.id)) as AssignedExamRow,
-        sessionMap.get(String(exam.id)) ?? null
-      )
+  return rows
+    .map((row) =>
+      mergeAssignedExamAccess(row, sessionMap.get(String(row.exam_id)) ?? null)
     )
     .filter(
       (
         exam
-      ): exam is NonNullable<ReturnType<typeof mergeAssignedExamAccess>> =>
+      ): exam is StudentAssignedExam =>
         Boolean(exam)
     )
     .sort(
@@ -840,46 +840,6 @@ async function finalizeSessionAttempt(
     };
   } finally {
     await redis.del(lockKey);
-  }
-}
-
-async function finalizeExpiredSessionsForStudent(
-  supabase: SupabaseServerClient,
-  userId: string,
-  examId?: string
-) {
-  let query = supabase
-    .from("exam_sessions")
-    .select("id, exam_id, started_at")
-    .eq("user_id", userId)
-    .eq("status", "in_progress")
-    .order("started_at", { ascending: false });
-
-  if (examId) {
-    query = query.eq("exam_id", examId);
-  }
-
-  const { data: sessions } = await query;
-  if (!sessions || sessions.length === 0) return;
-
-  for (const session of sessions) {
-    const exam = await getEffectiveExamAccessForStudent(
-      supabase,
-      userId,
-      session.exam_id
-    );
-
-    if (
-      exam &&
-      isSessionExpiredForExam(session.started_at ?? null, exam)
-    ) {
-      await finalizeSessionAttempt(supabase, {
-        sessionId: session.id,
-        examId: session.exam_id,
-        userId,
-        reason: "timeout",
-      });
-    }
   }
 }
 
@@ -1338,8 +1298,6 @@ export async function getStudentResults() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
-
-  await finalizeExpiredSessionsForStudent(supabase, user.id);
 
   const { data } = await supabase
     .from("exam_sessions")

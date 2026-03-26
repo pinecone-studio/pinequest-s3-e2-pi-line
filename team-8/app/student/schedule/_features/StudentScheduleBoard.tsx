@@ -48,6 +48,7 @@ function groupByDate(exams: StudentExamRow[]) {
 
 function getExamState(exam: StudentExamRow) {
   const lifecycle = exam.myLifecycleStatus ?? null;
+  const persistedSessionStatus = exam.mySessionStatus ?? null;
 
   if (lifecycle === "in_progress") {
     return {
@@ -80,9 +81,14 @@ function getExamState(exam: StudentExamRow) {
     return {
       label: lifecycle === "timed_out" ? "Хугацаа дууссан" : "Өгөөгүй",
       badge: "outline" as const,
-      actionLabel: lifecycle === "timed_out" ? "Үр дүн" : null,
+      actionLabel:
+        lifecycle === "timed_out" && persistedSessionStatus === "timed_out"
+          ? "Үр дүн"
+          : null,
       actionHref:
-        lifecycle === "timed_out" ? `/student/exams/${exam.id}/result` : null,
+        lifecycle === "timed_out" && persistedSessionStatus === "timed_out"
+          ? `/student/exams/${exam.id}/result`
+          : null,
     };
   }
 
