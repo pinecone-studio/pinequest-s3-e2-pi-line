@@ -5,11 +5,14 @@ import { usePathname } from "next/navigation"; // Added to handle the black back
 import { useState } from "react";
 import { logout } from "@/lib/auth/actions";
 import {
+  CalendarDays,
   LucideIcon,
   ChevronLeft,
+  FileText,
   HomeIcon,
   ListCheck,
   LogOut,
+  UserCircle2,
 } from "lucide-react";
 import Logo from "@/app/_icons/Logo";
 import Tsunh from "@/app/_icons/Tsunh";
@@ -22,7 +25,10 @@ interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/student", label: "Нүүр хуудас", icon: HomeIcon },
+  { href: "/student/exams", label: "Шалгалтууд", icon: FileText },
+  { href: "/student/schedule", label: "Миний хуваарь", icon: CalendarDays },
   { href: "/student/results", label: "Миний дүн", icon: ListCheck },
+  { href: "/student/profile", label: "Профайл", icon: UserCircle2 },
 ];
 
 const MENU_NAV_ITEMS: NavItem[] = ALL_NAV_ITEMS;
@@ -58,8 +64,9 @@ export default function Sidebar() {
         <nav className="flex flex-col gap-1">
           {MENU_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            // Checks if current path matches the link
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/student" && pathname.startsWith(item.href));
 
             return (
               <Link
@@ -67,8 +74,8 @@ export default function Sidebar() {
                 href={item.href}
                 className={`group flex items-center rounded-[12px] px-4 py-3 text-[15px] font-semibold transition-all duration-200 ${
                   isActive
-                    ? "border-2 border-[#d1b0fd] bg-[#eee1fe] text-[#7f32f5] shadow-sm"
-                    : "text-[#7F7F7F] hover:bg-[#F4F6FA] hover:text-[#7f32f5]"
+                    ? "border-2 border-[#4078C1] bg-[#ECF1F9] text-[#4078C1] shadow-sm"
+                    : "text-[#7F7F7F] hover:bg-[#F4F6FA] hover:text-[#4078C1]"
                 } ${isCollapsed ? "justify-center gap-0 px-3" : "gap-4"}`}
               >
                 <Icon
@@ -76,8 +83,8 @@ export default function Sidebar() {
                   strokeWidth={isActive ? 2.5 : 2}
                   className={`${
                     isActive
-                      ? "text-[#7f32f5]"
-                      : "text-[#575555] group-hover:text-[#7f32f5]"
+                      ? "text-[#4078C1]"
+                      : "text-[#575555] group-hover:text-[#4078C1]"
                   }`}
                 />
                 {!isCollapsed && <span>{item.label}</span>}
