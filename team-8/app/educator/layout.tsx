@@ -16,11 +16,11 @@ export default async function EducatorLayout({
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900">
-      <Header />
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 px-8 py-6">{children}</main>
+    <div className="flex min-h-screen bg-zinc-50 text-zinc-900">
+      <Sidebar />
+      <div className="flex min-h-screen flex-1 flex-col">
+        <Header />
+        <main className="flex-1 pl-19 pr-30">{children}</main>
       </div>
     </div>
   );

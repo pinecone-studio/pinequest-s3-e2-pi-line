@@ -1,35 +1,33 @@
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import PineconeLogo from "@/app/_icons/PineconeLogo";
-import { Bell } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Bell, Search, X, XCircle } from "lucide-react";
 
 export default function Header() {
   return (
-    <header className="w-full h-13 border-b border-gray-200 flex items-center justify-between px-6 bg-white">
-      {/* LEFT: Title */}
-      <div className="flex items-center gap-1">
-        <PineconeLogo className="h-5 w-5 text-black" />
-        <span className="text-l font-bold text-gray-900 tracking-tight">
-          ExamPanel
-        </span>
+    <header className="flex h-21.25 w-full shrink-0 items-center justify-between pl-19 pr-30">
+      {/* Search Bar Container */}
+      <div className="relative flex items-center">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-[#808084]" />
+          <input
+            className="h-10 w-80 rounded-[10px] border-none bg-[#E5E5E5] pl-10 pr-10 text-sm outline-none transition-all focus:ring-2 focus:ring-primary/20"
+            placeholder="Хайх"
+          />
+          <button className="h-4.5 w-4.5 bg-[#808084] absolute right-2.25 top-1/2 flex items-center justify-center rounded-full -translate-y-1/2">
+            <X className="h-4.5 w-4.5 text-white" />
+          </button>
+        </div>
       </div>
 
-      {/* RIGHT: Actions */}
+      {/* Right Side: Notifications & Profile */}
       <div className="flex items-center gap-4">
-        {/* Notification */}
-        <button className="relative p-2 rounded-md hover:border-black">
-          <Bell className="w-4 h-4" />
-          <span className="absolute -top-1 -right-1 text-xs bg-black text-white rounded-full px-1">
-            3
-          </span>
+        <button className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-100 bg-white shadow-sm hover:bg-gray-50">
+          <Bell className="h-5 w-5 text-gray-600" />
         </button>
 
-    
-        <div className="flex items-center gap-2  px-3 py-1.5 rounded-md">
-          <Avatar>
-            <AvatarFallback>JD</AvatarFallback>
-          </Avatar>
-          <span className="text-sm font-medium ">teacherName</span>
-        </div>
+        <Avatar className="h-10 w-10 border-2 border-white shadow-sm">
+          <AvatarImage src="https://github.com/shadcn.png" alt="User" />
+          <AvatarFallback>BT</AvatarFallback>
+        </Avatar>
       </div>
     </header>
   );
