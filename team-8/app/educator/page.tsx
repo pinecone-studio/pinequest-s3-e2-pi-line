@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DashboardImage from "../_icons/DashboardImage";
 import {
   Card,
   CardContent,
@@ -16,12 +17,21 @@ export default async function EducatorDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Багшийн самбар</h2>
-        <p className="text-muted-foreground">
-          Шалгалт, асуулт, дүнгийн удирдлага
-        </p>
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#fff6e4] via-[#FFF7EE] to-[#ced8e6] p-8">
+        <div className="relative z-10 max-w-2xl space-y-2">
+          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">
+            Багшийн самбар
+          </h2>
+          <p className="text-sm text-muted-foreground md:text-base">
+            Шалгалт, асуулт, хуваарь, дүнгийн удирдлагаа нэг дороос хянаарай.
+          </p>
+        </div>
+
+        <div className="pointer-events-none absolute bottom-0 right-0 hidden h-full w-auto scale-125 origin-bottom-right md:block">
+          <DashboardImage />
+        </div>
       </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
