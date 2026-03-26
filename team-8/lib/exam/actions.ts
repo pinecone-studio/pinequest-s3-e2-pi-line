@@ -95,13 +95,14 @@ export async function createExam(formData: FormData) {
   if (error) return { error: error.message };
 
   if (group_id) {
-    const { error: assignmentError } = await supabase
-      .from("exam_assignments")
-      .insert({
-        exam_id: data.id,
-        group_id,
-        assigned_by: user.id,
-      });
+    const { error: assignmentError } = await supabase.rpc(
+      "assign_exam_to_group",
+      {
+        p_exam_id: data.id,
+        p_group_id: group_id,
+        p_assigned_by: user.id,
+      }
+    );
 
     if (assignmentError) {
       await supabase

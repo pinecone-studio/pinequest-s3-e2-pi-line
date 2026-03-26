@@ -93,6 +93,27 @@ export interface QuestionBank {
   subjects?: { name: string } | null;
 }
 
+export interface QuestionImportMatchingPair {
+  left: string;
+  right: string;
+}
+
+export interface QuestionImportDraft {
+  draftId: string;
+  sourceRow: number;
+  type: QuestionType;
+  content: string;
+  contentHtml: string;
+  imageUrl: string;
+  explanation: string;
+  points: number;
+  options: string[];
+  correctAnswer: string;
+  multipleCorrectAnswers: string[];
+  matchingPairs: QuestionImportMatchingPair[];
+  errors: string[];
+}
+
 export interface TeacherSubject {
   teacher_id: string;
   subject_id: string;
@@ -110,7 +131,11 @@ export interface TeachingAssignment {
   created_at: string;
 }
 
-export type ExamSessionStatus = "in_progress" | "submitted" | "graded" | "timed_out";
+export type ExamSessionStatus =
+  | "in_progress"
+  | "submitted"
+  | "graded"
+  | "timed_out";
 
 export interface ExamSession {
   id: string;
