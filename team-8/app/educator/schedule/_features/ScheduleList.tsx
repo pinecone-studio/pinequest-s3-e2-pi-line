@@ -33,6 +33,21 @@ type ScheduleRow = {
   conflicts: ConflictInfo[];
 };
 
+function getOccupiedEndMs(row: Pick<ScheduleRow, "end_time" | "duration_minutes">) {
+  const closeTimeMs = new Date(row.end_time).getTime();
+  const durationMs = Number(row.duration_minutes ?? 0) * 60 * 1000;
+
+  if (
+    Number.isNaN(closeTimeMs) ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return closeTimeMs;
+  }
+
+  return closeTimeMs + durationMs;
+}
+
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString("mn-MN", {
     hour: "2-digit",
@@ -140,7 +155,7 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
 
     return rows.filter((row) => {
       const start = new Date(row.start_time).getTime();
-      const end = new Date(row.end_time).getTime();
+      const end = getOccupiedEndMs(row);
       const rowDate = new Date(row.start_time).toLocaleDateString("en-CA", {
         timeZone: "Asia/Ulaanbaatar",
       });
@@ -182,7 +197,7 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
       ? 0
       : rows.filter((row) => {
           const start = new Date(row.start_time).getTime();
-          const end = new Date(row.end_time).getTime();
+          const end = getOccupiedEndMs(row);
           return now >= start && now <= end;
         }).length;
   const nextSevenDaysCount =
@@ -265,7 +280,7 @@ export default function ScheduleList({ rows }: { rows: ScheduleRow[] }) {
           <div className="space-y-2">
             {exams.map((exam) => {
               const start = new Date(exam.start_time).getTime();
-              const end = new Date(exam.end_time).getTime();
+              const end = getOccupiedEndMs(exam);
               const isActive = now !== null && now >= start && now <= end;
               const isPast = now !== null && now > end;
               const hasConflict = exam.conflicts.length > 0;

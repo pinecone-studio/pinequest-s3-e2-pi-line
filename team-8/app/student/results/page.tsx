@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getStudentResults } from "@/lib/student/actions";
 import { formatDateTimeUB } from "@/lib/utils/date";
 import {
@@ -8,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ArrowRight } from "lucide-react";
 
 export default async function StudentResultsPage() {
   const results = await getStudentResults();
@@ -46,62 +48,71 @@ export default async function StudentResultsPage() {
                   : "Шалгагдаж байна";
 
             return (
-              <Card key={r.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-base">
-                      {exam?.title ?? "Шалгалт"}
-                    </CardTitle>
-                    <Badge
-                      variant={isFinal ? (passed ? "default" : "destructive") : "secondary"}
-                      className={
-                        !isFinal
-                          ? "bg-muted text-foreground"
-                          : passed
-                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : ""
-                      }
-                    >
-                      {isFinal ? (passed ? "Тэнцсэн" : "Тэнцээгүй") : "Урьдчилсан дүн"}
-                    </Badge>
-                  </div>
-                  <CardDescription>
-                    {r.submitted_at
-                      ? formatDateTimeUB(r.submitted_at)
-                      : ""}
-                    {" | "}
-                    {statusLabel}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="text-2xl font-bold">{pct}%</div>
-                    <div className="text-sm text-muted-foreground">
-                      {r.total_score ?? 0} / {r.max_score ?? 0} оноо
-                    </div>
-                    <div className="flex-1">
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full rounded-full ${
+              <Link
+                key={r.id}
+                href={`/student/exams/${r.exam_id}/result`}
+                className="block transition-shadow hover:shadow-md rounded-xl"
+              >
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">
+                        {exam?.title ?? "Шалгалт"}
+                      </CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={isFinal ? (passed ? "default" : "destructive") : "secondary"}
+                          className={
                             !isFinal
-                              ? "bg-slate-400"
+                              ? "bg-muted text-foreground"
                               : passed
-                                ? "bg-green-500"
-                                : "bg-red-500"
-                          }`}
-                          style={{ width: `${Math.min(pct, 100)}%` }}
-                        />
+                              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                              : ""
+                          }
+                        >
+                          {isFinal ? (passed ? "Тэнцсэн" : "Тэнцээгүй") : "Урьдчилсан дүн"}
+                        </Badge>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
                       </div>
                     </div>
-                  </div>
-                  {!isFinal && (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      Энэ дүн эцсийн биш байж болно. Багш задгай асуултуудыг
-                      шалгасны дараа шинэчлэгдэнэ.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+                    <CardDescription>
+                      {r.submitted_at
+                        ? formatDateTimeUB(r.submitted_at)
+                        : ""}
+                      {" | "}
+                      {statusLabel}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-4">
+                      <div className="text-2xl font-bold">{pct}%</div>
+                      <div className="text-sm text-muted-foreground">
+                        {r.total_score ?? 0} / {r.max_score ?? 0} оноо
+                      </div>
+                      <div className="flex-1">
+                        <div className="h-2 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={`h-full rounded-full ${
+                              !isFinal
+                                ? "bg-slate-400"
+                                : passed
+                                  ? "bg-green-500"
+                                  : "bg-red-500"
+                            }`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {!isFinal && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Энэ дүн эцсийн биш байж болно. Багш задгай асуултуудыг
+                        шалгасны дараа шинэчлэгдэнэ.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </Link>
             );
           })}
         </div>

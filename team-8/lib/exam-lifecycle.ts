@@ -36,6 +36,7 @@ type ExamLifecycleInput = {
   questionCount: number;
   assignmentCount: number;
   assignedStudentCount: number;
+  inProgressCount: number;
   pendingGradingCount: number;
   gradedCount: number;
   hasBlockingIssues?: boolean;
@@ -53,6 +54,7 @@ type LifecycleBatchExam = {
 };
 
 type ExamSessionSummary = {
+  inProgressCount: number;
   pendingGradingCount: number;
   gradedCount: number;
 };
@@ -99,7 +101,7 @@ function hasReadinessBlockers(input: ExamLifecycleInput) {
   return (
     !input.subjectId ||
     scheduleWindowMinutes <= 0 ||
-    input.durationMinutes > scheduleWindowMinutes ||
+    input.durationMinutes <= 0 ||
     input.questionCount <= 0 ||
     input.assignmentCount <= 0 ||
     input.assignedStudentCount <= 0
@@ -143,7 +145,10 @@ export function deriveExamLifecycle(
     };
   }
 
-  if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && nowMs <= endMs) {
+  if (
+    (!Number.isNaN(startMs) && !Number.isNaN(endMs) && nowMs <= endMs) ||
+    input.inProgressCount > 0
+  ) {
     return {
       key: "live",
       label: "Явагдаж байна",
@@ -258,7 +263,9 @@ export async function getExamSessionSummary(
 
   return (data ?? []).reduce<ExamSessionSummary>(
     (summary, session) => {
-      if (session.status === "submitted") {
+      if (session.status === "in_progress") {
+        summary.inProgressCount += 1;
+      } else if (session.status === "submitted") {
         summary.pendingGradingCount += 1;
       } else if (session.status === "graded") {
         summary.gradedCount += 1;
@@ -266,6 +273,7 @@ export async function getExamSessionSummary(
       return summary;
     },
     {
+      inProgressCount: 0,
       pendingGradingCount: 0,
       gradedCount: 0,
     }
@@ -290,7 +298,7 @@ export async function buildExamLifecycleMap(
       .from("exam_sessions")
       .select("exam_id, status")
       .in("exam_id", examIds)
-      .in("status", ["submitted", "graded"]),
+      .in("status", ["in_progress", "submitted", "graded"]),
   ]);
 
   const groupIds = Array.from(
@@ -322,11 +330,14 @@ export async function buildExamLifecycleMap(
   const sessionSummaryByExam = new Map<string, ExamSessionSummary>();
   for (const row of sessionRows ?? []) {
     const existing = sessionSummaryByExam.get(row.exam_id) ?? {
+      inProgressCount: 0,
       pendingGradingCount: 0,
       gradedCount: 0,
     };
 
-    if (row.status === "submitted") {
+    if (row.status === "in_progress") {
+      existing.inProgressCount += 1;
+    } else if (row.status === "submitted") {
       existing.pendingGradingCount += 1;
     } else if (row.status === "graded") {
       existing.gradedCount += 1;
@@ -348,6 +359,7 @@ export async function buildExamLifecycleMap(
     }
 
     const sessionSummary = sessionSummaryByExam.get(exam.id) ?? {
+      inProgressCount: 0,
       pendingGradingCount: 0,
       gradedCount: 0,
     };
@@ -363,6 +375,7 @@ export async function buildExamLifecycleMap(
         questionCount: exam.questions?.[0]?.count ?? 0,
         assignmentCount: assignedGroupIds.length,
         assignedStudentCount: studentIds.size,
+        inProgressCount: sessionSummary.inProgressCount,
         pendingGradingCount: sessionSummary.pendingGradingCount,
         gradedCount: sessionSummary.gradedCount,
       })

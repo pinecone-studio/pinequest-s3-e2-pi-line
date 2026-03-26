@@ -5,12 +5,14 @@ import { getExamReadiness } from "@/lib/exam-readiness";
 import { getTeacherSubjects } from "@/lib/subject/actions";
 import { getExamCreationGroups } from "@/lib/group/actions";
 import ExamReadinessPanel from "@/components/exams/exam-readiness-panel";
+import ExamScheduleFields from "@/components/exams/ExamScheduleFields";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, School2 } from "lucide-react";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -53,15 +55,6 @@ export default async function EditExamPage({ params, searchParams }: Props) {
     )
   );
   const assignedGroupSet = new Set(assignedGroupIds);
-
-  // datetime-local форматаар хөрвүүлэх (UB цагаар: +08:00 хасаж local болгох)
-  const toLocal = (iso: string) => {
-    const d = new Date(iso);
-    // Asia/Ulaanbaatar: UTC+8
-    const offset = 8 * 60;
-    const local = new Date(d.getTime() + offset * 60 * 1000);
-    return local.toISOString().slice(0, 16);
-  };
 
   async function handleUpdate(formData: FormData) {
     "use server";
@@ -137,38 +130,58 @@ export default async function EditExamPage({ params, searchParams }: Props) {
               </div>
 
               <div className="space-y-3 rounded-xl border p-4">
-                <div className="space-y-1">
-                  <Label>Оноох анги / бүлгүүд</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Энэ шалгалтыг ямар анги, сонгон бүлгүүдэд өгөхөө эндээс шинэчилнэ.
-                  </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <Label>Оноох анги / бүлгүүд</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Энэ шалгалтыг ямар анги, сонгон бүлгүүдэд өгөхөө эндээс шинэчилнэ.
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="h-auto py-1">
+                    {assignedGroupIds.length} бүлэг сонгосон
+                  </Badge>
                 </div>
                 {groups.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
                     Таны заадаг бүлэг одоогоор олдсонгүй.
                   </div>
                 ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {groups.map((group) => (
                       <label
                         key={group.id}
-                        className="flex items-start gap-3 rounded-lg border px-3 py-3 text-sm"
+                        className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm transition-colors ${
+                          assignedGroupSet.has(group.id)
+                            ? "border-primary bg-primary/5"
+                            : "bg-background hover:border-primary/40 hover:bg-muted/20"
+                        }`}
                       >
-                        <input
-                          type="checkbox"
-                          name="group_ids"
-                          value={group.id}
-                          defaultChecked={assignedGroupSet.has(group.id)}
-                          className="mt-0.5 h-4 w-4 rounded border"
-                        />
-                        <span className="space-y-1">
-                          <span className="block font-medium">{group.name}</span>
-                          <span className="block text-muted-foreground">
-                            {group.grade ? `${group.grade}-р анги` : "Ангийн түвшин заагаагүй"}
-                            {group.allowed_subject_ids.length > 0
-                              ? ` · ${group.allowed_subject_ids.length} хичээл`
-                              : ""}
+                        <span className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            name="group_ids"
+                            value={group.id}
+                            defaultChecked={assignedGroupSet.has(group.id)}
+                            className="mt-0.5 h-4 w-4 rounded border"
+                          />
+                          <span className="space-y-1">
+                            <span className="block font-medium">{group.name}</span>
+                            <span className="block text-muted-foreground">
+                              {group.grade ? `${group.grade}-р анги` : "Ангийн түвшин заагаагүй"}
+                              {group.allowed_subject_ids.length > 0
+                                ? ` · ${group.allowed_subject_ids.length} хичээл`
+                                : ""}
+                            </span>
                           </span>
+                        </span>
+                        <span
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                            assignedGroupSet.has(group.id)
+                              ? "bg-primary/10 text-primary"
+                              : "bg-muted/40 text-muted-foreground"
+                          }`}
+                        >
+                          <School2 className="h-4 w-4" />
                         </span>
                       </label>
                     ))}
@@ -176,99 +189,15 @@ export default async function EditExamPage({ params, searchParams }: Props) {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="start_time">Эхлэх цаг *</Label>
-                  <Input
-                    id="start_time"
-                    name="start_time"
-                    type="datetime-local"
-                    defaultValue={toLocal(exam.start_time)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="end_time">Дуусах цаг *</Label>
-                  <Input
-                    id="end_time"
-                    name="end_time"
-                    type="datetime-local"
-                    defaultValue={toLocal(exam.end_time)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="duration_minutes">Хугацаа (минут) *</Label>
-                  <Input
-                    id="duration_minutes"
-                    name="duration_minutes"
-                    type="number"
-                    min="5"
-                    max="300"
-                    defaultValue={exam.duration_minutes}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="passing_score">Тэнцэх оноо (%)</Label>
-                  <Input
-                    id="passing_score"
-                    name="passing_score"
-                    type="number"
-                    min="0"
-                    max="100"
-                    defaultValue={exam.passing_score ?? 60}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="max_attempts">Оролдлогын тоо</Label>
-                <Input
-                  id="max_attempts"
-                  name="max_attempts"
-                  type="number"
-                  min="1"
-                  max="10"
-                  defaultValue={exam.max_attempts ?? 1}
-                />
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="shuffle_questions"
-                    name="shuffle_questions"
-                    defaultChecked={exam.shuffle_questions}
-                    className="h-4 w-4 rounded border"
-                  />
-                  <Label
-                    htmlFor="shuffle_questions"
-                    className="cursor-pointer font-normal"
-                  >
-                    Асуултыг санамсаргүй дарааллаар гаргах
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="shuffle_options"
-                    name="shuffle_options"
-                    defaultChecked={exam.shuffle_options}
-                    className="h-4 w-4 rounded border"
-                  />
-                  <Label
-                    htmlFor="shuffle_options"
-                    className="cursor-pointer font-normal"
-                  >
-                    Сонголтуудын дарааллыг холих
-                  </Label>
-                </div>
-              </div>
+              <ExamScheduleFields
+                initialStartTime={exam.start_time}
+                initialEndTime={exam.end_time}
+                initialDurationMinutes={exam.duration_minutes}
+                initialPassingScore={exam.passing_score ?? 60}
+                initialMaxAttempts={exam.max_attempts ?? 1}
+                initialShuffleQuestions={exam.shuffle_questions}
+                initialShuffleOptions={exam.shuffle_options}
+              />
 
               <div className="flex gap-2">
                 <Button type="submit" className="flex-1">

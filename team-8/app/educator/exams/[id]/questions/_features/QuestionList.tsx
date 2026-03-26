@@ -98,11 +98,14 @@ export default function QuestionList({
               <Card className="border-dashed bg-muted/20">
                 <CardContent className="space-y-3 pt-4">
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary">Shared passage</Badge>
+                    <Badge variant="secondary">Нийтлэг өгөгдөл</Badge>
                     {passage.title && (
                       <span className="font-medium">{passage.title}</span>
                     )}
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Доорх асуултууд энэ текст, зураг, хүснэгт эсвэл өгөгдлийг хамт ашиглана.
+                  </p>
                   <MathContent
                     html={passage.content_html}
                     text={passage.content}
@@ -112,7 +115,7 @@ export default function QuestionList({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={passage.image_url}
-                      alt="Passage зураг"
+                      alt="Нийтлэг өгөгдлийн зураг"
                       className="max-h-64 rounded-lg border"
                     />
                   )}
@@ -136,7 +139,7 @@ export default function QuestionList({
                     <Badge variant="outline">{q.points} оноо</Badge>
                     {q.question_passages && (
                       <Badge variant="secondary" className="text-xs">
-                        Passage-д холбогдсон
+                        Эх материалд холбогдсон
                       </Badge>
                     )}
                     {q.image_url && (

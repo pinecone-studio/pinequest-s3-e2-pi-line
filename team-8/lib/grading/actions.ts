@@ -301,7 +301,7 @@ export async function gradeAnswer(
 
   const { data: question } = await supabase
     .from("questions")
-    .select("exam_id")
+    .select("exam_id, points")
     .eq("id", answer.question_id)
     .maybeSingle();
 
@@ -330,7 +330,7 @@ export async function gradeAnswer(
     .from("answers")
     .update({
       score,
-      is_correct: score > 0,
+      is_correct: score >= (question.points ?? 1),
       feedback,
       graded_by: user.id,
       graded_at: new Date().toISOString(),

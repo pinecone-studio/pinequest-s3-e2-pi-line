@@ -87,13 +87,34 @@ export default function AssignExamSection({
     return Array.isArray(questions) ? Number(questions[0]?.count ?? 0) : 0;
   }
 
-  function getScheduleStatus(startTime?: string, endTime?: string) {
+  function getOccupiedEndTime(endTime?: string, durationMinutes?: number) {
+    if (!endTime) return Number.NaN;
+
+    const closeTime = new Date(endTime).getTime();
+    const durationMs = Number(durationMinutes ?? 0) * 60 * 1000;
+
+    if (
+      Number.isNaN(closeTime) ||
+      !Number.isFinite(durationMs) ||
+      durationMs <= 0
+    ) {
+      return closeTime;
+    }
+
+    return closeTime + durationMs;
+  }
+
+  function getScheduleStatus(
+    startTime?: string,
+    endTime?: string,
+    durationMinutes?: number
+  ) {
     if (!startTime || !endTime) {
       return { label: "Хуваарь дутуу", variant: "outline" as const };
     }
 
     const start = new Date(startTime).getTime();
-    const end = new Date(endTime).getTime();
+    const end = getOccupiedEndTime(endTime, durationMinutes);
 
     if (currentTime < start) {
       return { label: "Удахгүй", variant: "outline" as const };
@@ -207,7 +228,8 @@ export default function AssignExamSection({
             const exam = assignment.exams;
             const scheduleStatus = getScheduleStatus(
               exam?.start_time,
-              exam?.end_time
+              exam?.end_time,
+              exam?.duration_minutes
             );
 
             return (

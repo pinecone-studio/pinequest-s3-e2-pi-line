@@ -71,19 +71,17 @@ export function getSessionDeadlineMs(
   if (!startedAt) return null;
 
   const startedAtMs = new Date(startedAt).getTime();
-  const examEndMs = new Date(exam.end_time).getTime();
   const durationMs = Number(exam.duration_minutes ?? 0) * 60 * 1000;
 
   if (
     Number.isNaN(startedAtMs) ||
-    Number.isNaN(examEndMs) ||
     !Number.isFinite(durationMs) ||
     durationMs <= 0
   ) {
     return null;
   }
 
-  return Math.min(startedAtMs + durationMs, examEndMs);
+  return startedAtMs + durationMs;
 }
 
 export function deriveStudentExamLifecycle(

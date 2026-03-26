@@ -29,6 +29,7 @@ AS $$
       e.subject_id,
       e.start_time,
       e.end_time,
+      e.duration_minutes,
       es.room
     FROM public.exams e
     LEFT JOIN public.exam_schedules es
@@ -71,6 +72,7 @@ AS $$
       e.title,
       e.start_time,
       e.end_time,
+      e.duration_minutes,
       es.room
     FROM public.exams e
     LEFT JOIN public.exam_schedules es
@@ -95,8 +97,8 @@ AS $$
     FROM base_exams be
     JOIN all_exams ae
       ON ae.id <> be.id
-     AND be.start_time < ae.end_time
-     AND be.end_time > ae.start_time
+     AND be.start_time < (ae.end_time + make_interval(mins => COALESCE(ae.duration_minutes, 0)))
+     AND (be.end_time + make_interval(mins => COALESCE(be.duration_minutes, 0))) > ae.start_time
     JOIN base_exam_students bes
       ON bes.exam_id = be.id
     JOIN all_exam_students aes
@@ -112,8 +114,8 @@ AS $$
     FROM base_exams be
     JOIN all_exams ae
       ON ae.id <> be.id
-     AND be.start_time < ae.end_time
-     AND be.end_time > ae.start_time
+     AND be.start_time < (ae.end_time + make_interval(mins => COALESCE(ae.duration_minutes, 0)))
+     AND (be.end_time + make_interval(mins => COALESCE(be.duration_minutes, 0))) > ae.start_time
     WHERE be.room IS NOT NULL
       AND ae.room IS NOT NULL
       AND lower(trim(be.room)) = lower(trim(ae.room))

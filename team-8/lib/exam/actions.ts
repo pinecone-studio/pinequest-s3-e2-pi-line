@@ -24,12 +24,6 @@ import {
   getAllowedSubjectIds,
 } from "@/lib/teacher/permissions";
 
-function getScheduleWindowMinutes(startTime: string, endTime: string) {
-  return Math.floor(
-    (new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000
-  );
-}
-
 export async function createExam(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -67,12 +61,10 @@ export async function createExam(formData: FormData) {
   }
 
   if (new Date(start_time).getTime() >= new Date(end_time).getTime()) {
-    return { error: "Дуусах цаг нь эхлэх цагаасаа хойш байх ёстой" };
+    return { error: "Хаагдах хугацаа нь нээгдэх хугацаанаас хойш байх ёстой" };
   }
-
-  const scheduleWindowMinutes = getScheduleWindowMinutes(start_time, end_time);
-  if (duration_minutes > scheduleWindowMinutes) {
-    return { error: "Шалгалтын хугацаа нь нээлттэй цонхоос урт байж болохгүй" };
+  if (duration_minutes <= 0) {
+    return { error: "Шалгалтын үргэлжлэх хугацаа 0-ээс их байх ёстой" };
   }
 
   // Subject permission check (strict)
@@ -214,13 +206,12 @@ export async function updateExam(examId: string, formData: FormData) {
         : [];
 
   if (new Date(start_time).getTime() >= new Date(end_time).getTime()) {
-    return { error: "Дуусах цаг нь эхлэх цагаасаа хойш байх ёстой" };
+    return { error: "Хаагдах хугацаа нь нээгдэх хугацаанаас хойш байх ёстой" };
   }
 
-  const scheduleWindowMinutes = getScheduleWindowMinutes(start_time, end_time);
   const durationMinutes = parseInt(formData.get("duration_minutes") as string);
-  if (durationMinutes > scheduleWindowMinutes) {
-    return { error: "Шалгалтын хугацаа нь нээлттэй цонхоос урт байж болохгүй" };
+  if (durationMinutes <= 0) {
+    return { error: "Шалгалтын үргэлжлэх хугацаа 0-ээс их байх ёстой" };
   }
 
   // Subject permission check (strict)
@@ -274,6 +265,7 @@ export async function updateExam(examId: string, formData: FormData) {
         title: title || existingExam.title,
         start_time,
         end_time,
+        duration_minutes: durationMinutes,
       }
     );
     if (conflictError) {

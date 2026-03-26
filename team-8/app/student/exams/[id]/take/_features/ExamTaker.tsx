@@ -381,11 +381,11 @@ export default function ExamTaker({
           500
         );
 
-        if (newCount >= 5) {
+        if (newCount >= 10) {
           void handleSubmit();
-        } else if (newCount >= 3) {
+        } else if (newCount >= 5) {
           alert(
-            `Анхааруулга: Та ${newCount} удаа цонхноос гарлаа. 5 удаа давбал шалгалт автоматаар дуусна!`
+            `Анхааруулга: Та ${newCount} удаа цонхноос гарлаа. 10 удаа давбал шалгалт автоматаар дуусна!`
           );
         }
       }
@@ -627,11 +627,14 @@ export default function ExamTaker({
               {currentPassage && (
                 <div className="space-y-3 rounded-xl border border-dashed bg-muted/30 p-4">
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary">Shared passage</Badge>
+                    <Badge variant="secondary">Нийтлэг өгөгдөл</Badge>
                     {currentPassage.title && (
                       <span className="font-medium">{currentPassage.title}</span>
                     )}
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Энэ зураг, текст эсвэл өгөгдлийг ашиглаад доорх асуултад хариулна.
+                  </p>
                   <MathContent
                     html={currentPassage.content_html}
                     text={currentPassage.content}
@@ -641,7 +644,7 @@ export default function ExamTaker({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={currentPassage.image_url}
-                      alt="Passage зураг"
+                      alt="Нийтлэг өгөгдлийн зураг"
                       className="max-h-72 rounded-lg border"
                     />
                   )}
