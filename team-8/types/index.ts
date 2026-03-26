@@ -46,6 +46,48 @@ export interface Exam {
   passing_score: number | null;
   created_at: string;
   updated_at: string;
+  published_at?: string | null;
+  published_snapshot?: PublishedExamSnapshot | null;
+}
+
+export interface PublishedExamSnapshotGroup {
+  id: string;
+  name: string;
+  grade: number | null;
+  group_type: string;
+  member_count: number;
+}
+
+export interface PublishedExamSnapshotStats {
+  question_count: number;
+  passage_count: number;
+  total_points: number;
+  assignment_count: number;
+  assigned_student_count: number;
+  has_essay_questions: boolean;
+}
+
+export interface PublishedExamSnapshot {
+  version: number;
+  created_at: string;
+  exam: {
+    id: string;
+    title: string;
+    description: string | null;
+    subject_id: string | null;
+    start_time: string;
+    end_time: string;
+    duration_minutes: number;
+    max_attempts: number;
+    shuffle_questions: boolean;
+    shuffle_options: boolean;
+    passing_score: number | null;
+    published_at: string;
+  };
+  questions: Question[];
+  passages: QuestionPassage[];
+  assigned_groups: PublishedExamSnapshotGroup[];
+  stats: PublishedExamSnapshotStats;
 }
 
 export type QuestionType =
@@ -187,6 +229,19 @@ export interface ExamAssignment {
   id: string;
   exam_id: string;
   group_id: string;
+  assigned_by: string | null;
+  assigned_at: string;
+}
+
+export interface ExamRecipientOverride {
+  exam_id: string;
+  student_id: string;
+  access_start_time: string | null;
+  access_end_time: string | null;
+  max_attempts_override: number | null;
+  excused_at: string | null;
+  excused_by: string | null;
+  status_note: string | null;
   assigned_by: string | null;
   assigned_at: string;
 }

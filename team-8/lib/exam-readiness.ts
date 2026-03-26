@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { getExamAssignmentConflictError } from "@/lib/exam-conflicts";
+import {
+  deriveExamLifecycle,
+  getExamSessionSummary,
+  getExamSubjectAssignmentConsistency,
+  type ExamLifecycleSummary,
+} from "@/lib/exam-lifecycle";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 type ReadinessStatus = "complete" | "warning" | "blocked";
@@ -44,6 +50,7 @@ export type ExamReadiness = {
   examId: string;
   examTitle: string;
   isPublished: boolean;
+  lifecycle: ExamLifecycleSummary;
   canPublish: boolean;
   blockedCount: number;
   warningCount: number;
@@ -185,12 +192,13 @@ async function buildExamReadinessForOwner(
   const exam = seed?.exam ?? (await getOwnedExamLite(supabase, examId, userId));
   if (!exam) return null;
 
-  const [assignmentSummary, questionRows, passageCount] = await Promise.all([
+  const [assignmentSummary, questionRows, passageCount, sessionSummary] = await Promise.all([
     loadAssignedGroups(supabase, examId),
     seed?.questions ? Promise.resolve(seed.questions) : loadQuestionRows(supabase, examId),
     typeof seed?.passageCount === "number"
       ? Promise.resolve(seed.passageCount)
       : loadPassageCount(supabase, examId),
+    getExamSessionSummary(supabase, examId),
   ]);
 
   const scheduleWindowMinutes = getScheduleWindowMinutes(
@@ -209,6 +217,13 @@ async function buildExamReadinessForOwner(
   const assignedGroups = assignmentSummary.groups;
   const assignmentCount = assignedGroups.length;
   const assignedStudentCount = assignmentSummary.uniqueStudentCount;
+  const assignmentConsistency = await getExamSubjectAssignmentConsistency(
+    supabase,
+    userId,
+    examId,
+    exam.subject_id,
+    assignedGroups
+  );
   const conflictMessage =
     assignmentCount > 0
       ? (await getExamAssignmentConflictError(supabase, examId)) ?? null
@@ -265,6 +280,14 @@ async function buildExamReadinessForOwner(
       status: assignmentCount > 0 ? "complete" : "blocked",
     },
     {
+      key: "assignment_scope",
+      label: "Хичээл ба assignment",
+      description:
+        assignmentConsistency.error ??
+        "Оноосон бүлгүүд одоогийн хичээл, багшийн teaching assignment-тай нийцэж байна.",
+      status: assignmentConsistency.error ? "blocked" : "complete",
+    },
+    {
       key: "students",
       label: "Хамрагдах сурагчид",
       description:
@@ -296,11 +319,25 @@ async function buildExamReadinessForOwner(
 
   const blockedCount = checks.filter((check) => check.status === "blocked").length;
   const warningCount = checks.filter((check) => check.status === "warning").length;
+  const lifecycle = deriveExamLifecycle({
+    isPublished: Boolean(exam.is_published),
+    subjectId: exam.subject_id,
+    startTime: exam.start_time,
+    endTime: exam.end_time,
+    durationMinutes: Number(exam.duration_minutes),
+    questionCount,
+    assignmentCount,
+    assignedStudentCount,
+    pendingGradingCount: sessionSummary.pendingGradingCount,
+    gradedCount: sessionSummary.gradedCount,
+    hasBlockingIssues: blockedCount > 0,
+  });
 
   return {
     examId: exam.id,
     examTitle: exam.title,
     isPublished: Boolean(exam.is_published),
+    lifecycle,
     canPublish: blockedCount === 0 && !exam.is_published,
     blockedCount,
     warningCount,

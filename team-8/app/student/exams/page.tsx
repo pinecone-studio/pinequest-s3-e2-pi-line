@@ -18,19 +18,22 @@ export default async function StudentExamsPage({
 }) {
   const { error: errorParam } = await searchParams;
   const exams = await getStudentExams();
-  const now = new Date();
-  const readyCount = exams.filter((exam) => {
-    const startTime = new Date(exam.start_time);
-    const endTime = new Date(exam.end_time);
-    const sessionStatus = exam.mySessionStatus as string | null;
-    const isSubmitted = sessionStatus === "submitted" || sessionStatus === "graded";
-    return !isSubmitted && now >= startTime && now <= endTime;
-  }).length;
-  const upcomingCount = exams.filter((exam) => now < new Date(exam.start_time)).length;
-  const finishedCount = exams.filter((exam) => {
-    const sessionStatus = exam.mySessionStatus as string | null;
-    return sessionStatus === "submitted" || sessionStatus === "graded";
-  }).length;
+  const readyCount = exams.filter(
+    (exam) =>
+      exam.myLifecycleStatus === "available" ||
+      exam.myLifecycleStatus === "retake_available" ||
+      exam.myLifecycleStatus === "in_progress"
+  ).length;
+  const upcomingCount = exams.filter(
+    (exam) =>
+      exam.myLifecycleStatus === "scheduled" ||
+      exam.myLifecycleStatus === "retake_scheduled"
+  ).length;
+  const finishedCount = exams.filter((exam) =>
+    ["submitted", "graded", "absent", "excused", "timed_out"].includes(
+      String(exam.myLifecycleStatus)
+    )
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -63,15 +66,16 @@ export default async function StudentExamsPage({
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {exams.map((exam) => {
-            const startTime = new Date(exam.start_time);
-            const endTime = new Date(exam.end_time);
-            const isActive = now >= startTime && now <= endTime;
-            const isUpcoming = now < startTime;
-            const isExpired = now > endTime;
-            const sessionStatus = exam.mySessionStatus as string | null;
+            const lifecycle = String(exam.myLifecycleStatus ?? "");
             const isSubmitted =
-              sessionStatus === "submitted" || sessionStatus === "graded";
-            const isInProgress = sessionStatus === "in_progress";
+              lifecycle === "submitted" || lifecycle === "graded";
+            const isInProgress = lifecycle === "in_progress";
+            const isAvailable =
+              lifecycle === "available" || lifecycle === "retake_available";
+            const isUpcoming =
+              lifecycle === "scheduled" || lifecycle === "retake_scheduled";
+            const isExcused = lifecycle === "excused";
+            const isAbsent = lifecycle === "absent" || lifecycle === "timed_out";
 
             return (
               <Card key={exam.id} className="flex flex-col">
@@ -81,12 +85,23 @@ export default async function StudentExamsPage({
                     {isSubmitted && (
                       <Badge variant="secondary">Өгсөн</Badge>
                     )}
-                    {!isSubmitted && isActive && (
-                      <Badge variant="secondary">Одоо эхэлнэ</Badge>
+                    {!isSubmitted && isAvailable && (
+                      <Badge variant="secondary">
+                        {lifecycle === "retake_available"
+                          ? "Нөхөн шалгалт"
+                          : "Одоо эхэлнэ"}
+                      </Badge>
                     )}
-                    {!isSubmitted && isUpcoming && <Badge variant="secondary">Удахгүй</Badge>}
-                    {!isSubmitted && isExpired && (
-                      <Badge variant="outline">Дууссан</Badge>
+                    {!isSubmitted && isUpcoming && (
+                      <Badge variant="outline">
+                        {lifecycle === "retake_scheduled" ? "Нөхөн товлогдсон" : "Удахгүй"}
+                      </Badge>
+                    )}
+                    {isExcused && (
+                      <Badge variant="outline">Чөлөөлөгдсөн</Badge>
+                    )}
+                    {isAbsent && (
+                      <Badge variant="outline">Өгөөгүй</Badge>
                     )}
                   </div>
                   {exam.description && (
@@ -125,7 +140,7 @@ export default async function StudentExamsPage({
                   )}
 
                   {/* Үргэлжлүүлэх (in_progress + цаг дуусаагүй) */}
-                  {!isSubmitted && isInProgress && isActive && (
+                  {!isSubmitted && isInProgress && (
                     <Link href={`/student/exams/${exam.id}/take`}>
                       <Button variant="outline" className="w-full">
                         Үргэлжлүүлэх
@@ -134,9 +149,13 @@ export default async function StudentExamsPage({
                   )}
 
                   {/* Шалгалт өгөх (active, session байхгүй) */}
-                  {!isSubmitted && !isInProgress && isActive && (
+                  {!isSubmitted && !isInProgress && isAvailable && (
                     <Link href={`/student/exams/${exam.id}/take`}>
-                      <Button className="w-full">Шалгалт өгөх</Button>
+                      <Button className="w-full">
+                        {lifecycle === "retake_available"
+                          ? "Нөхөн шалгалт өгөх"
+                          : "Шалгалт өгөх"}
+                      </Button>
                     </Link>
                   )}
 
@@ -146,9 +165,15 @@ export default async function StudentExamsPage({
                     </Button>
                   )}
 
-                  {!isSubmitted && !isInProgress && isExpired && (
+                  {!isSubmitted && isExcused && (
                     <Button disabled variant="outline" className="w-full">
-                      Дууссан
+                      Чөлөөлөгдсөн
+                    </Button>
+                  )}
+
+                  {!isSubmitted && !isInProgress && isAbsent && (
+                    <Button disabled variant="outline" className="w-full">
+                      Өгөөгүй
                     </Button>
                   )}
                 </CardContent>

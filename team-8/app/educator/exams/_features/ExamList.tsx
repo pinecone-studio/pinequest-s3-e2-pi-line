@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { BarChart2, MoreVertical, PlusCircle } from "lucide-react";
+import type { ExamLifecycleSummary } from "@/lib/exam-lifecycle";
 
 interface Exam {
   id: string;
@@ -29,6 +30,7 @@ interface Exam {
   shuffle_options: boolean;
   subjects?: { name: string } | null;
   questions: { count: number }[];
+  lifecycle: ExamLifecycleSummary | null;
 }
 
 interface Props {
@@ -47,19 +49,39 @@ export default function ExamList({ exams }: Props) {
     return () => window.clearInterval(interval);
   }, []);
 
-  function getScheduleStatus(startTime: string, endTime: string) {
+  function getFallbackLifecycle(startTime: string, endTime: string, isPublished: boolean) {
     const start = new Date(startTime).getTime();
     const end = new Date(endTime).getTime();
 
+    if (!isPublished) {
+      return {
+        label: "Ноорог",
+        description: "Шалгалтаа нийтлэхээс өмнө агуулга, assignment-аа шалгана уу.",
+        variant: "outline" as const,
+      };
+    }
+
     if (currentTime < start) {
-      return { label: "Удахгүй", variant: "outline" as const };
+      return {
+        label: "Товлогдсон",
+        description: "Шалгалт нийтлэгдсэн бөгөөд эхлэх цагаа хүлээж байна.",
+        variant: "outline" as const,
+      };
     }
 
     if (currentTime <= end) {
-      return { label: "Явагдаж байна", variant: "secondary" as const };
+      return {
+        label: "Явагдаж байна",
+        description: "Сурагчид одоогоор шалгалт өгч байна.",
+        variant: "default" as const,
+      };
     }
 
-    return { label: "Дууссан", variant: "secondary" as const };
+    return {
+      label: "Дууссан",
+      description: "Шалгалтын идэвхтэй хугацаа дууссан байна.",
+      variant: "secondary" as const,
+    };
   }
 
   if (exams.length === 0) {
@@ -81,7 +103,13 @@ export default function ExamList({ exams }: Props) {
       {exams.map((exam) => {
         const qCount = exam.questions?.[0]?.count ?? 0;
         const startDate = formatDateTimeUB(exam.start_time);
-        const scheduleStatus = getScheduleStatus(exam.start_time, exam.end_time);
+        const lifecycle =
+          exam.lifecycle ??
+          getFallbackLifecycle(
+            exam.start_time,
+            exam.end_time,
+            exam.is_published
+          );
         return (
           <Card key={exam.id} className="flex flex-col">
             <CardHeader className="flex-row items-start justify-between space-y-0 pb-2">
@@ -129,15 +157,10 @@ export default function ExamList({ exams }: Props) {
                 <p className="text-xs text-muted-foreground line-clamp-2">{exam.description}</p>
               )}
               <div className="flex flex-wrap gap-2">
-                <Badge variant={exam.is_published ? "default" : "secondary"}>
-                  {exam.is_published ? "Нийтлэгдсэн" : "Ноорог"}
-                </Badge>
+                <Badge variant={lifecycle.variant}>{lifecycle.label}</Badge>
                 <Badge variant="outline">{qCount} асуулт</Badge>
                 <Badge variant="outline">{exam.duration_minutes} мин</Badge>
                 <Badge variant="outline">{exam.max_attempts} оролдлого</Badge>
-                <Badge variant={scheduleStatus.variant}>
-                  {scheduleStatus.label}
-                </Badge>
                 {exam.subjects?.name && (
                   <Badge variant="secondary">{exam.subjects.name}</Badge>
                 )}
@@ -147,15 +170,7 @@ export default function ExamList({ exams }: Props) {
               </div>
               <div className="space-y-1 text-xs text-muted-foreground">
                 <p>{startDate}</p>
-                <p>
-                  {exam.is_published
-                    ? qCount > 0
-                      ? "Нийтлэгдсэн. Хуваарь, assignment, дүнгээ цааш хянана."
-                      : "Нийтлэгдсэн боловч асуултын тоог шалгана уу."
-                    : qCount > 0
-                    ? "Агуулга бэлдсэн. Нийтлэхээс өмнө бэлэн байдлын самбараа шалгана уу."
-                    : "Нийтлэхийн өмнө асуулт, assignment, хуваариа бүрэн болгоно уу."}
-                </p>
+                <p>{lifecycle.description}</p>
               </div>
               <Link href={`/educator/exams/${exam.id}/questions`} className="mt-auto">
                 <Button variant="outline" size="sm" className="w-full">

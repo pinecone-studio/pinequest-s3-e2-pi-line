@@ -29,19 +29,10 @@ function getStatusIcon(status: "complete" | "warning" | "blocked") {
 }
 
 function getStatusBadge(readiness: ExamReadiness) {
-  if (readiness.isPublished) {
-    return { label: "Нийтэлсэн", variant: "default" as const };
-  }
-
-  if (readiness.blockedCount > 0) {
-    return { label: "Бэлэн биш", variant: "outline" as const };
-  }
-
-  if (readiness.warningCount > 0) {
-    return { label: "Анхаарах зүйлтэй", variant: "secondary" as const };
-  }
-
-  return { label: "Нийтлэхэд бэлэн", variant: "secondary" as const };
+  return {
+    label: readiness.lifecycle.label,
+    variant: readiness.lifecycle.variant,
+  };
 }
 
 function getGroupTypeLabel(groupType: string) {
@@ -76,8 +67,7 @@ export default function ExamReadinessPanel({
           )}
         </div>
         <CardDescription>
-          Нийтлэхээс өмнө агуулга, assignment, schedule, grading урсгалууд
-          бүгд бэлэн эсэхийг эндээс харна.
+          {readiness.lifecycle.description}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

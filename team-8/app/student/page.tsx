@@ -89,11 +89,17 @@ export default async function StudentDashboard() {
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <Badge variant="outline">{exam.duration_minutes} мин</Badge>
-                      {exam.session_status === "in_progress" ? (
-                        <Badge variant="secondary">Үргэлжилж байна</Badge>
-                      ) : (
-                        <Badge variant="outline">Товлогдсон</Badge>
-                      )}
+                      <Badge
+                        variant={
+                          exam.lifecycle_status === "available" ||
+                          exam.lifecycle_status === "retake_available" ||
+                          exam.lifecycle_status === "in_progress"
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {exam.lifecycle_label}
+                      </Badge>
                     </div>
                   </div>
                 ))}

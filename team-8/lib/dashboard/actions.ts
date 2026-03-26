@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { deriveStudentExamLifecycle, getEffectiveExamAccess } from "@/lib/exam-session-lifecycle";
 
 function getRelationObject<T>(value: T | T[] | null | undefined) {
   if (Array.isArray(value)) return value[0] ?? null;
@@ -14,6 +15,8 @@ type StudentUpcomingExam = {
   end_time: string;
   duration_minutes: number;
   session_status: string | null;
+  lifecycle_status: string;
+  lifecycle_label: string;
 };
 
 export async function getEducatorStats() {
@@ -163,82 +166,122 @@ export async function getStudentStats() {
 
   const now = new Date().toISOString();
 
-  const [activeAssignmentsRes, sessionsRes, upcomingAssignmentsRes] = await Promise.all([
+  const [assignedRowsRes, sessionsRes] = await Promise.all([
     supabase
       .from("exam_recipients")
       .select(
         `
         exam_id,
-        exams!inner(id)
+        access_start_time,
+        access_end_time,
+        max_attempts_override,
+        excused_at,
+        exams!inner(id, title, start_time, end_time, duration_minutes, max_attempts)
       `
       )
       .eq("student_id", user.id)
-      .eq("exams.is_published", true)
-      .lte("exams.start_time", now)
-      .gte("exams.end_time", now),
+      .eq("exams.is_published", true),
     supabase
       .from("exam_sessions")
-      .select("exam_id, status, submitted_at, total_score, max_score, exams(title, passing_score)")
-      .eq("user_id", user.id)
-      .in("status", ["submitted", "graded"]),
-    supabase
-      .from("exam_recipients")
       .select(
-        `
-        exam_id,
-        exams!inner(id, title, start_time, end_time, duration_minutes)
-      `
+        "exam_id, status, submitted_at, total_score, max_score, attempt_number, exams(title, passing_score)"
       )
-      .eq("student_id", user.id)
-      .eq("exams.is_published", true)
-      .gte("exams.end_time", now),
+      .eq("user_id", user.id)
+      .in("status", ["in_progress", "submitted", "graded", "timed_out"]),
   ]);
-
-  const activeExams = new Set(
-    (activeAssignmentsRes.data ?? []).map((assignment) => assignment.exam_id)
-  ).size;
   const sessions = sessionsRes.data ?? [];
-  const upcomingRows = upcomingAssignmentsRes.data ?? [];
+  const assignedRows = assignedRowsRes.data ?? [];
+  const finishedSessions = sessions.filter((session) =>
+    ["submitted", "graded", "timed_out"].includes(String(session.status))
+  );
+  const completedSessions = sessions.filter((session) =>
+    ["submitted", "graded"].includes(String(session.status))
+  );
   let avgScore: number | null = null;
-  if (sessions.length > 0) {
-    const totalPct = sessions.reduce((sum, s) => {
+  if (completedSessions.length > 0) {
+    const totalPct = completedSessions.reduce((sum, s) => {
       if (s.max_score && s.max_score > 0) {
         return sum + (s.total_score / s.max_score) * 100;
       }
       return sum;
     }, 0);
-    avgScore = Math.round(totalPct / sessions.length);
+    avgScore = Math.round(totalPct / completedSessions.length);
   }
 
-  const latestSessionByExam = new Map<string, string>();
+  const latestSessionByExam = new Map<
+    string,
+    { status: string; attemptNumber: number }
+  >();
   for (const session of sessions) {
     if (!latestSessionByExam.has(session.exam_id as string)) {
-      latestSessionByExam.set(session.exam_id as string, session.status as string);
+      latestSessionByExam.set(session.exam_id as string, {
+        status: String(session.status),
+        attemptNumber: Number(session.attempt_number ?? 0),
+      });
     }
   }
 
-  const upcomingExams = Array.from(
-    new Map(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      upcomingRows.map((row: any) => {
-        const exam = getRelationObject(row.exams);
-        return [
-          exam?.id as string,
-          exam
-            ? {
-                id: exam.id,
-                title: exam.title,
-                start_time: exam.start_time,
-                end_time: exam.end_time,
-                duration_minutes: exam.duration_minutes,
-                session_status: latestSessionByExam.get(exam.id) ?? null,
-              }
-            : null,
-        ];
-      })
-    ).values()
-  )
-    .filter((exam): exam is StudentUpcomingExam => Boolean(exam))
+  const nowMs = new Date(now).getTime();
+  const decoratedExamMap = new Map<string, StudentUpcomingExam>();
+
+  for (const row of assignedRows) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exam = getRelationObject(row.exams as any);
+    if (!exam) continue;
+
+    const access = getEffectiveExamAccess(
+      {
+        start_time: exam.start_time,
+        end_time: exam.end_time,
+        max_attempts: exam.max_attempts,
+      },
+      row
+    );
+    const lifecycle = deriveStudentExamLifecycle({
+      exam: {
+        start_time: exam.start_time,
+        end_time: exam.end_time,
+        max_attempts: exam.max_attempts,
+      },
+      recipient: row,
+      latestSessionStatus:
+        latestSessionByExam.get(exam.id)?.status ?? null,
+      latestAttemptNumber:
+        latestSessionByExam.get(exam.id)?.attemptNumber ?? 0,
+      nowMs,
+    });
+
+    decoratedExamMap.set(String(exam.id), {
+      id: exam.id,
+      title: exam.title,
+      start_time: access.effectiveStartTime,
+      end_time: access.effectiveEndTime,
+      duration_minutes: exam.duration_minutes,
+      session_status:
+        latestSessionByExam.get(exam.id)?.status ?? null,
+      lifecycle_status: lifecycle.key,
+      lifecycle_label: lifecycle.label,
+    });
+  }
+
+  const decoratedExams = Array.from(decoratedExamMap.values());
+
+  const activeExams = decoratedExams.filter(
+    (exam) =>
+      exam.lifecycle_status === "available" ||
+      exam.lifecycle_status === "retake_available" ||
+      exam.lifecycle_status === "in_progress"
+  ).length;
+
+  const upcomingExams = decoratedExams
+    .filter(
+      (exam) =>
+        exam.lifecycle_status === "scheduled" ||
+        exam.lifecycle_status === "retake_scheduled" ||
+        exam.lifecycle_status === "available" ||
+        exam.lifecycle_status === "retake_available" ||
+        exam.lifecycle_status === "in_progress"
+    )
     .sort(
       (left, right) =>
         new Date(left.start_time).getTime() -
@@ -246,7 +289,7 @@ export async function getStudentStats() {
     )
     .slice(0, 5);
 
-  const recentResults = sessions
+  const recentResults = completedSessions
     .slice()
     .sort(
       (left, right) =>
@@ -272,7 +315,7 @@ export async function getStudentStats() {
 
   return {
     activeExams,
-    completedExams: sessions.length,
+    completedExams: finishedSessions.length,
     avgScore,
     upcomingExams,
     recentResults,
