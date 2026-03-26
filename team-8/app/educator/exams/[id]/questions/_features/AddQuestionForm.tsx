@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ClipboardEvent } from "react";
 import { addQuestion } from "@/lib/question/actions";
+import { parsePastedQuestionText } from "@/lib/question/paste";
+import LatexShortcutPanel from "@/components/math/LatexShortcutPanel";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -13,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { PlusCircle, Trash2 } from "lucide-react";
 import type { QuestionPassage, QuestionType } from "@/types";
 
@@ -61,6 +63,8 @@ function createEmptyMatchingPair(): MatchingPair {
 
 export default function AddQuestionForm({ examId }: Props) {
   const [type, setType] = useState<QuestionType>("multiple_choice");
+  const [isFormulaToolOpen, setIsFormulaToolOpen] = useState(false);
+  const [content, setContent] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [correctAnswer, setCorrectAnswer] = useState("");
   const [multipleCorrectAnswers, setMultipleCorrectAnswers] = useState<string[]>([]);
@@ -79,13 +83,62 @@ export default function AddQuestionForm({ examId }: Props) {
     setMatchingPairs([createEmptyMatchingPair(), createEmptyMatchingPair()]);
   }
 
+  function applyParsedQuestion(rawText: string) {
+    const parsed = parsePastedQuestionText(rawText);
+    if (!parsed) return false;
+
+    setError(null);
+    setContent(parsed.content);
+    setType(parsed.type);
+
+    if (parsed.type === "multiple_choice") {
+      setOptions(parsed.options.length >= 2 ? parsed.options : ["", ""]);
+      setCorrectAnswer(parsed.correctAnswer);
+      setMultipleCorrectAnswers([]);
+      setMatchingPairs([createEmptyMatchingPair(), createEmptyMatchingPair()]);
+      return true;
+    }
+
+    if (parsed.type === "multiple_response") {
+      setOptions(parsed.options.length >= 2 ? parsed.options : ["", ""]);
+      setCorrectAnswer("");
+      setMultipleCorrectAnswers(parsed.multipleCorrectAnswers);
+      setMatchingPairs([createEmptyMatchingPair(), createEmptyMatchingPair()]);
+      return true;
+    }
+
+    if (parsed.type === "fill_blank") {
+      setOptions(["", ""]);
+      setCorrectAnswer(parsed.correctAnswer);
+      setMultipleCorrectAnswers([]);
+      setMatchingPairs([createEmptyMatchingPair(), createEmptyMatchingPair()]);
+      return true;
+    }
+
+    setOptions(["", ""]);
+    setCorrectAnswer("");
+    setMultipleCorrectAnswers([]);
+    setMatchingPairs([createEmptyMatchingPair(), createEmptyMatchingPair()]);
+    return true;
+  }
+
+  function handleContentPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pastedText = event.clipboardData.getData("text");
+    if (!pastedText.trim()) return;
+
+    const didParse = applyParsedQuestion(pastedText);
+    if (!didParse) return;
+
+    event.preventDefault();
+  }
+
   function addOption() {
     setOptions((prev) => [...prev, ""]);
   }
 
   function removeOption(index: number) {
     const removedValue = options[index];
-    const nextOptions = options.filter((_, i) => i !== index);
+    const nextOptions = options.filter((_, optionIndex) => optionIndex !== index);
 
     setOptions(nextOptions);
 
@@ -143,9 +196,7 @@ export default function AddQuestionForm({ examId }: Props) {
   function removeMatchingPair(index: number) {
     setMatchingPairs((prev) => {
       const next = prev.filter((_, pairIndex) => pairIndex !== index);
-      return next.length >= 2
-        ? next
-        : [...next, createEmptyMatchingPair()];
+      return next.length >= 2 ? next : [...next, createEmptyMatchingPair()];
     });
   }
 
@@ -164,6 +215,7 @@ export default function AddQuestionForm({ examId }: Props) {
 
     if (type === "multiple_choice") {
       const validOptions = options.map((option) => option.trim()).filter(Boolean);
+
       if (validOptions.length < 2) {
         setError("Дор хаяж 2 хариултын сонголт оруулна уу.");
         setLoading(false);
@@ -236,6 +288,9 @@ export default function AddQuestionForm({ examId }: Props) {
     }
 
     resetTypeState(type);
+    setIsFormulaToolOpen(false);
+    setContent("");
+
     const form = document.getElementById("question-form") as HTMLFormElement | null;
     form?.reset();
     setLoading(false);
@@ -254,34 +309,72 @@ export default function AddQuestionForm({ examId }: Props) {
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_auto] items-start gap-2">
             <Label>Асуултын төрөл</Label>
-            <Select value={type} onValueChange={(value) => resetTypeState(value as QuestionType)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {questionTypes.map((questionType) => (
-                  <SelectItem key={questionType.value} value={questionType.value}>
-                    {questionType.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              aria-controls="question-formula-tool"
+              aria-expanded={isFormulaToolOpen}
+              onClick={() => setIsFormulaToolOpen((prev) => !prev)}
+            >
+              Formula Tool
+              <span className="ml-2 text-xs text-muted-foreground">
+                {isFormulaToolOpen ? "Хаах" : "Нээх"}
+              </span>
+            </Button>
+
+            <div className="col-span-2">
+              <Select
+                value={type}
+                onValueChange={(value) => resetTypeState(value as QuestionType)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {questionTypes.map((questionType) => (
+                    <SelectItem key={questionType.value} value={questionType.value}>
+                      {questionType.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <p className="col-span-2 text-sm text-muted-foreground">
               {questionTypes.find((item) => item.value === type)?.hint}
             </p>
           </div>
+
+          {isFormulaToolOpen && (
+            <div id="question-formula-tool">
+              <LatexShortcutPanel
+                targetId="content"
+                title="Formula Tool"
+                description="Асуулт доторх томьёо, язгуур, хими, физикийн тэмдэгтээ шууд оруулна."
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="content">Асуулт</Label>
             <Textarea
               id="content"
               name="content"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              onPaste={handleContentPaste}
               placeholder="Асуултаа энд бичнэ үү..."
               rows={4}
               required
             />
+            <p className="text-xs text-muted-foreground">
+              Word, Docs эсвэл өөр газраас асуулт, сонголт, зөв хариулттай
+              текстээ paste хийвэл автоматаар таньж бөглөнө.
+            </p>
           </div>
 
           {(type === "multiple_choice" || type === "multiple_response") && (
@@ -297,7 +390,11 @@ export default function AddQuestionForm({ examId }: Props) {
                   <div key={index} className="flex items-center gap-2">
                     <input
                       type={type === "multiple_choice" ? "radio" : "checkbox"}
-                      name={type === "multiple_choice" ? "correct_option" : `correct_option_${index}`}
+                      name={
+                        type === "multiple_choice"
+                          ? "correct_option"
+                          : `correct_option_${index}`
+                      }
                       checked={isChecked}
                       onChange={() =>
                         type === "multiple_choice"
@@ -354,7 +451,10 @@ export default function AddQuestionForm({ examId }: Props) {
             <div className="space-y-3">
               <Label>Холбох мөрүүд</Label>
               {matchingPairs.map((pair, index) => (
-                <div key={index} className="grid gap-2 md:grid-cols-[1fr_auto_1fr_auto] md:items-center">
+                <div
+                  key={index}
+                  className="grid gap-2 md:grid-cols-[1fr_auto_1fr_auto] md:items-center"
+                >
                   <Input
                     value={pair.left}
                     onChange={(event) =>
@@ -382,7 +482,12 @@ export default function AddQuestionForm({ examId }: Props) {
                   )}
                 </div>
               ))}
-              <Button type="button" variant="outline" size="sm" onClick={addMatchingPair}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addMatchingPair}
+              >
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Мөр нэмэх
               </Button>

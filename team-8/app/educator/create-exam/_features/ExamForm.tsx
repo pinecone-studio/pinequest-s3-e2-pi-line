@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  School2,
 } from "lucide-react";
 import { createExam } from "@/lib/exam/actions";
 import { Button } from "@/components/ui/button";
@@ -32,13 +31,6 @@ interface SubjectOption {
   id: string;
   name: string;
   description: string | null;
-}
-
-interface GroupOption {
-  id: string;
-  name: string;
-  grade: number | null;
-  group_type: string;
 }
 
 const weekDays = ["Ня", "Да", "Мя", "Лх", "Пү", "Ба", "Бя"];
@@ -153,15 +145,12 @@ function cycleValue(current: string, max: number, step: 1 | -1) {
 
 export default function ExamForm({
   subjects,
-  groups,
 }: {
   subjects: SubjectOption[];
-  groups: GroupOption[];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [subjectId, setSubjectId] = useState("__none");
-  const [groupId, setGroupId] = useState("__none");
   const [startDate, setStartDate] = useState("");
   const [startClock, setStartClock] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -182,7 +171,6 @@ export default function ExamForm({
   const endTime = joinDateTime(endDate, endClock);
   const startTimeParts = splitTimeParts(startClock);
   const endTimeParts = splitTimeParts(endClock);
-  const selectedGroup = groups.find((group) => group.id === groupId);
   const startCalendarDays = buildCalendarDays(startMonth);
   const endCalendarDays = buildCalendarDays(endMonth);
 
@@ -302,69 +290,28 @@ export default function ExamForm({
             />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Хичээл</Label>
-              <Select value={subjectId} onValueChange={setSubjectId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Хичээл сонгох" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">Сонгоогүй</SelectItem>
-                  {subjects.map((subject) => (
-                    <SelectItem key={subject.id} value={subject.id}>
-                      {subject.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input
-                type="hidden"
-                name="subject_id"
-                value={subjectId === "__none" ? "" : subjectId}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Анги / Бүлэг</Label>
-              <Select value={groupId} onValueChange={setGroupId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Анги эсвэл бүлэг сонгох" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">Сонгоогүй</SelectItem>
-                  {groups.map((group) => (
-                    <SelectItem key={group.id} value={group.id}>
-                      {group.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <input
-                type="hidden"
-                name="group_id"
-                value={groupId === "__none" ? "" : groupId}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Хичээл</Label>
+            <Select value={subjectId} onValueChange={setSubjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Хичээл сонгох" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">Сонгоогүй</SelectItem>
+                {subjects.map((subject) => (
+                  <SelectItem key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              type="hidden"
+              name="subject_id"
+              value={subjectId === "__none" ? "" : subjectId}
+            />
+            <input type="hidden" name="group_id" value="" />
           </div>
-
-          {selectedGroup && (
-            <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-background">
-                <School2 className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <div className="space-y-1">
-                <p className="font-medium">{selectedGroup.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {selectedGroup.grade
-                    ? `${selectedGroup.grade}-р анги`
-                    : "Анги заагаагүй"}
-                  {" • "}
-                  {selectedGroup.group_type}
-                </p>
-              </div>
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label htmlFor="description">Тайлбар</Label>
