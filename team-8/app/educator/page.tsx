@@ -29,43 +29,59 @@ export default async function EducatorDashboard() {
         </div>
 
         <div className="grid gap-8 md:grid-cols-4">
-          <Card className="overflow-hidden border-0 rounded-3xl bg-gradient-to-br from-[#4F9DF7] to-[#2F6BD7] text-white shadow-lg p-6">
-            {/* TEXT */}
-            <div className="space-y-1">
-              <h3 className="text-xl font-semibold">Нийт асуултууд</h3>
-              <p className="text-sm text-white/80">Асуултын сан</p>
-            </div>
+          <Card className="relative overflow-hidden border-0 rounded-[32px] bg-[#4F9DF7] text-white shadow-lg p-8 h-full">
+            {/* Background Decorative Blobs */}
+            {/* Curve: Top-Left */}
+            <div className="absolute top-[-30%] left-[-20%] w-[120%] h-[80%] bg-[#2F6BD7] rounded-[50%] opacity-60" />
 
-            {/* SPACING */}
-            <div className="h-6" />
+            {/* Curve: Bottom-Right */}
+            <div className="absolute bottom-[-30%] right-[-20%] w-[100%] h-[70%] bg-[#2F6BD7] rounded-[40%] opacity-70" />
 
-            {/* PROGRESS */}
-            <div className="flex items-center gap-4">
-              <div className="relative h-16 w-16">
-                <svg viewBox="0 0 36 36" className="h-16 w-16 -rotate-90">
-                  {/* background circle */}
-                  <path
-                    className="stroke-white/20"
-                    strokeWidth="3"
-                    fill="none"
-                    d="M18 2 a 16 16 0 1 1 0 32 a 16 16 0 1 1 0 -32"
-                  />
+            {/* White Overlay to soften the center (creates the depth) */}
+            <div className="absolute inset-0 bg-white/10 rounded-full blur-3xl opacity-30" />
 
-                  {/* progress */}
-                  <path
-                    className="stroke-white"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    fill="none"
-                    strokeDasharray="75, 100"
-                    d="M18 2 a 16 16 0 1 1 0 32 a 16 16 0 1 1 0 -32"
-                  />
-                </svg>
+            {/* Content Layer (Relative to stay above blobs) */}
+            <div className="relative z-10 flex flex-col h-full justify-between">
+              <div className="space-y-1">
+                <h3 className="text-2xl font-bold tracking-tight">
+                  Нийт асуултууд
+                </h3>
+                <p className="text-sm text-white/80 font-medium">
+                  Асуултын сан
+                </p>
+              </div>
 
-                {/* percent text */}
-                <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
-                  75%
-                </span>
+              <div className="mt-8 flex items-center gap-4">
+                <div className="relative h-20 w-20">
+                  <svg
+                    viewBox="0 0 36 36"
+                    className="h-20 w-20 -rotate-90 overflow-visible"
+                  >
+                    {/* Track */}
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="16"
+                      fill="none"
+                      className="stroke-white/20"
+                      strokeWidth="3.5"
+                    />
+                    {/* Progress */}
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="16"
+                      fill="none"
+                      className="stroke-white"
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeDasharray="75, 100"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-lg font-bold">
+                    75%
+                  </span>
+                </div>
               </div>
             </div>
           </Card>
