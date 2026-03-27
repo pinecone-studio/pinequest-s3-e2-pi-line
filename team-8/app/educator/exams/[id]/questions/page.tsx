@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ExamReadinessPanel from "@/components/exams/exam-readiness-panel";
 import AddQuestionForm from "./_features/AddQuestionForm";
+import PassageManager from "./_features/PassageManager";
 import QuestionImportActions from "./_features/QuestionImportActions";
 import QuestionList from "./_features/QuestionList";
 
@@ -82,7 +83,7 @@ export default async function ExamQuestionsPage({ params }: Props) {
             )}
             <span className="text-sm text-muted-foreground">
               {exam.duration_minutes} минут · {questions.length} асуулт ·{" "}
-              {passages.length} passage block
+              {passages.length} эх материал
             </span>
           </div>
         </div>
@@ -102,29 +103,32 @@ export default async function ExamQuestionsPage({ params }: Props) {
 
       {readiness && <ExamReadinessPanel readiness={readiness} examId={id} />}
 
-      <div className="space-y-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-4">
-            <h3 className="font-semibold">Асуултууд</h3>
-            <QuestionList
-              questions={questions}
-              examId={id}
-              passages={passages}
-              isLocked={Boolean(exam.is_published)}
-            />
-          </div>
-
-          {!exam.is_published && <QuestionImportActions examId={id} />}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
+          <h3 className="font-semibold">Асуултууд</h3>
+          <QuestionList
+            questions={questions}
+            examId={id}
+            passages={passages}
+            isLocked={Boolean(exam.is_published)}
+          />
         </div>
 
-        {exam.is_published ? (
-          <div className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">
-            Энэ шалгалт нийтлэгдсэн тул асуулт нэмэх, устгах, сангаас импортлох
-            боломжгүй.
-          </div>
-        ) : (
-          <AddQuestionForm examId={id} passages={passages} />
-        )}
+        <div className="space-y-4">
+          {!exam.is_published && <QuestionImportActions examId={id} />}
+
+          {exam.is_published ? (
+            <div className="rounded-lg border border-dashed p-8 text-sm text-muted-foreground">
+              Энэ шалгалт нийтлэгдсэн тул асуулт нэмэх, устгах, сангаас
+              импортлох боломжгүй.
+            </div>
+          ) : (
+            <>
+              <AddQuestionForm examId={id} passages={passages} />
+              <PassageManager examId={id} passages={passages} />
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

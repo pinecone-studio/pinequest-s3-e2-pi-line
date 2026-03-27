@@ -359,16 +359,16 @@ export default function EditQuestionDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Shared passage block</Label>
+              <Label>Нийтлэг өгөгдөл / эх материал</Label>
               <Select value={selectedPassageId} onValueChange={setSelectedPassageId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Passage сонгохгүй" />
+                  <SelectValue placeholder="Эх материал холбохгүй" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none">Холбохгүй</SelectItem>
                   {passages.map((passage, index) => (
                     <SelectItem key={passage.id} value={passage.id}>
-                      {passage.title || `Block ${index + 1}`}
+                      {passage.title || `Материал ${index + 1}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -379,7 +379,7 @@ export default function EditQuestionDialog({
           {selectedPassage && (
             <div className="space-y-2 rounded-lg border border-dashed bg-muted/30 p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Сонгосон passage
+                Сонгосон эх материал
               </p>
               {selectedPassage.title && (
                 <p className="font-medium">{selectedPassage.title}</p>
@@ -389,6 +389,14 @@ export default function EditQuestionDialog({
                 text={selectedPassage.content}
                 className="prose prose-sm max-w-none text-foreground"
               />
+              {selectedPassage.image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={selectedPassage.image_url}
+                  alt="Сонгосон эх материалын зураг"
+                  className="max-h-56 rounded-lg border"
+                />
+              )}
             </div>
           )}
 

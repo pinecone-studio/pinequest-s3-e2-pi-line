@@ -5,7 +5,6 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Pencil, Search, Trash2 } from "lucide-react";
 import {
-  bulkUpdateQuestionBankItems,
   deleteQuestionBankItem,
   importQuestionFromBank,
 } from "@/lib/question/actions";
@@ -13,7 +12,6 @@ import type {
   Difficulty,
   QuestionBank,
   QuestionBankSummary,
-  QuestionBankVisibility,
   Subject,
 } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -135,10 +133,6 @@ export default function QuestionBankBrowser({
   const [difficultyFilter, setDifficultyFilter] = useState("all");
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [visibilityFilter, setVisibilityFilter] = useState("all");
-  const [tagQuery, setTagQuery] = useState("");
-  const [bulkVisibility, setBulkVisibility] = useState("__none");
-  const [bulkDifficulty, setBulkDifficulty] = useState("__none");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(
     importUnavailableMessage ?? null,
   );
@@ -146,7 +140,6 @@ export default function QuestionBankBrowser({
   const [lastImportedId, setLastImportedId] = useState<string | null>(null);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const normalizedTagQuery = tagQuery.trim().toLowerCase();
   const availableSubjects = useMemo(
     () =>
       Array.from(
@@ -175,50 +168,16 @@ export default function QuestionBankBrowser({
         subjectFilter === "all" || question.subject_id === subjectFilter;
       const matchesVisibility =
         visibilityFilter === "all" || question.visibility === visibilityFilter;
-      const matchesTag =
-        normalizedTagQuery.length === 0 ||
-        tags.some((tag) => tag.toLowerCase().includes(normalizedTagQuery));
 
       return (
         matchesQuery &&
         matchesType &&
         matchesDifficulty &&
         matchesSubject &&
-        matchesVisibility &&
-        matchesTag
+        matchesVisibility
       );
     });
-  }, [
-    difficultyFilter,
-    normalizedQuery,
-    normalizedTagQuery,
-    questions,
-    subjectFilter,
-    typeFilter,
-    visibilityFilter,
-  ]);
-
-  const visibleManageableIds = useMemo(
-    () =>
-      filteredQuestions
-        .filter((question) => isManageable(question, viewerId, isAdmin))
-        .map((question) => question.id),
-    [filteredQuestions, isAdmin, viewerId],
-  );
-
-  const allVisibleManageableSelected =
-    visibleManageableIds.length > 0 &&
-    visibleManageableIds.every((id) => selectedIds.includes(id));
-
-  function toggleSelectAllVisible() {
-    setSelectedIds((prev) => {
-      if (allVisibleManageableSelected) {
-        return prev.filter((id) => !visibleManageableIds.includes(id));
-      }
-
-      return Array.from(new Set([...prev, ...visibleManageableIds]));
-    });
-  }
+  }, [difficultyFilter, normalizedQuery, questions, subjectFilter, typeFilter, visibilityFilter]);
 
   function handleImport(bankQuestionId: string) {
     if (!examId) {
@@ -245,37 +204,6 @@ export default function QuestionBankBrowser({
     });
   }
 
-  function applyBulkUpdate(payload: {
-    visibility?: QuestionBankVisibility;
-    difficulty?: Difficulty;
-  }) {
-    if (selectedIds.length === 0) {
-      setError("Bulk update хийхийн өмнө дор хаяж 1 асуулт сонгоно уу.");
-      return;
-    }
-
-    setError(null);
-    setWarning(null);
-    startTransition(() => {
-      void (async () => {
-        const result = await bulkUpdateQuestionBankItems(selectedIds, payload);
-        if (result?.error) {
-          setError(result.error);
-          return;
-        }
-
-        if (payload.visibility) {
-          setBulkVisibility("__none");
-        }
-        if (payload.difficulty) {
-          setBulkDifficulty("__none");
-        }
-        setSelectedIds([]);
-        router.refresh();
-      })();
-    });
-  }
-
   function handleDelete(questionId: string) {
     setError(null);
     setWarning(null);
@@ -287,7 +215,6 @@ export default function QuestionBankBrowser({
           return;
         }
 
-        setSelectedIds((prev) => prev.filter((id) => id !== questionId));
         router.refresh();
       })();
     });
@@ -425,30 +352,6 @@ export default function QuestionBankBrowser({
           </label>
         </div>
 
-        {/* <div className="flex flex-col gap-2 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
-            <p>
-              {filteredQuestions.length} / {questions.length} асуулт харагдаж
-              байна
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">Хувийн {summary.private_count}</Badge>
-              <Badge variant="secondary">
-                Хуваалцсан {summary.shared_subject_count}
-              </Badge>
-              <Badge>Curated {summary.admin_curated_count}</Badge>
-              <Badge variant="outline">Архив {summary.archived_count}</Badge>
-            </div>
-          </div>
-
-          <div className="max-w-sm">
-            <Input
-              value={tagQuery}
-              onChange={(event) => setTagQuery(event.target.value)}
-              placeholder="Tag шүүх..."
-              className="h-10 rounded-2xl border-0 bg-muted shadow-none"
-            />
-          </div> */}
-
         {error && (
           <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
             {error}
@@ -461,94 +364,6 @@ export default function QuestionBankBrowser({
           {warning}
         </div>
       )}
-
-      {/* {visibleManageableIds.length > 0 && (
-        <Card>
-          <CardContent className="space-y-3 pt-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={allVisibleManageableSelected}
-                    onChange={toggleSelectAllVisible}
-                    className="h-4 w-4"
-                  />
-                  Харагдаж буй удирдах боломжтой асуултуудыг бүгдийг сонгох
-                </label>
-                <Badge variant="outline">{selectedIds.length} сонгосон</Badge>
-              </div>
-              {selectedIds.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setSelectedIds([])}
-                >
-                  Сонголт цэвэрлэх
-                </Button>
-              )}
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <select
-                value={bulkVisibility}
-                onChange={(event) => setBulkVisibility(event.target.value)}
-                className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
-              >
-                <option value="__none">Төлөв бөөнөөр солих</option>
-                <option value="private">Хувийн</option>
-                <option value="shared_subject">Хичээлийн дундын</option>
-                {isAdmin && (
-                  <option value="admin_curated">Баталгаажсан сан</option>
-                )}
-                <option value="archived">Архив</option>
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  isPending ||
-                  bulkVisibility === "__none" ||
-                  selectedIds.length === 0
-                }
-                onClick={() =>
-                  applyBulkUpdate({
-                    visibility: bulkVisibility as QuestionBankVisibility,
-                  })
-                }
-              >
-                Төлөв шинэчлэх
-              </Button>
-              <select
-                value={bulkDifficulty}
-                onChange={(event) => setBulkDifficulty(event.target.value)}
-                className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
-              >
-                <option value="__none">Түвшин бөөнөөр солих</option>
-                <option value="easy">Хялбар</option>
-                <option value="medium">Дунд</option>
-                <option value="hard">Хэцүү</option>
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  isPending ||
-                  bulkDifficulty === "__none" ||
-                  selectedIds.length === 0
-                }
-                onClick={() =>
-                  applyBulkUpdate({
-                    difficulty: bulkDifficulty as Difficulty,
-                  })
-                }
-              >
-                Түвшин шинэчлэх
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )} */}
 
       {filteredQuestions.length === 0 ? (
         <div className="rounded-lg border border-dashed py-16 text-center text-muted-foreground">
@@ -572,10 +387,6 @@ export default function QuestionBankBrowser({
                 className="overflow-hidden rounded-[22px] border border-black/5 bg-white shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
               >
                 <CardContent className="flex gap-4 p-1">
-                  {canManage ? (
-                    <label className=" flex items-start "></label>
-                  ) : null}
-
                   <div className="min-w-0 flex-1 space-y-3">
                     <div className="flex justify-between">
                       <div className="flex flex-wrap items-center gap-2">

@@ -52,91 +52,46 @@ export default async function EducatorDashboard() {
 
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div className="space-y-1">
-              <h3 className="text-sm font-bold tracking-tight">Асуултын сан</h3>
-
+              <h3 className="text-sm font-bold tracking-tight">Нийт шалгалт</h3>
               <p className="text-3xl font-semibold">{stats.totalExams}</p>
             </div>
-            <p className="text-xs ">Үүсгэсэн</p>
+            <p className="text-xs">Үүсгэсэн</p>
           </div>
         </Card>
         <Card className="relative overflow-hidden rounded-2xl bg-[#FF993A] text-white shadow-lg p-4 h-full">
-          {/* Background Decorative Blobs */}
-
-          {/* Curve: Top-Left */}
-
           <div className="absolute top-[-30%] left-[-20%] w-[60%] h-[80%] bg-[#FF7E07] rounded-[50%] opacity-60" />
-
-          {/* Curve: Bottom-Right */}
-
           <div className="absolute bottom-[-30%] right-[-20%] w-[50%] h-[70%] bg-[#FF7E07] rounded-[40%] opacity-70" />
-
-          {/* White Overlay to soften the center (creates the depth) */}
-
           <div className="absolute inset-0 bg-white/10 rounded-full blur-3xl opacity-30" />
-
-          {/* Content Layer (Relative to stay above blobs) */}
-
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div className="space-y-1">
               <h3 className="text-sm font-bold tracking-tight">Асуултын сан</h3>
-
               <p className="text-3xl font-semibold">{stats.totalQuestions}</p>
             </div>
-            <p className="text-xs ">Нийт асуулт</p>
+            <p className="text-xs">Нийт асуулт</p>
           </div>
         </Card>
         <Card className="relative overflow-hidden rounded-2xl bg-[#FFD143] text-white shadow-lg p-4 h-full">
-          {/* Background Decorative Blobs */}
-
-          {/* Curve: Top-Left */}
-
           <div className="absolute top-[-30%] left-[-20%] w-[60%] h-[80%] bg-[#FFC000] rounded-[50%] opacity-60" />
-
-          {/* Curve: Bottom-Right */}
-
-          <div className="absolute bottom-[-30%] right-[-20%] w-[50%] h-[70%]  bg-[#FFC000] rounded-[40%] opacity-70" />
-
-          {/* White Overlay to soften the center (creates the depth) */}
-
+          <div className="absolute bottom-[-30%] right-[-20%] w-[50%] h-[70%] bg-[#FFC000] rounded-[40%] opacity-70" />
           <div className="absolute inset-0 bg-white/10 rounded-full blur-3xl opacity-30" />
-
-          {/* Content Layer (Relative to stay above blobs) */}
-
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div className="space-y-1">
-              <h3 className="text-sm font-bold tracking-tight">
-                Идэвхтэй шалгалт
-              </h3>
-
-              <p className="text-3xl font-semibold">{stats.pendingGrading}</p>
+              <h3 className="text-sm font-bold tracking-tight">Идэвхтэй шалгалт</h3>
+              <p className="text-3xl font-semibold">{stats.activeExams}</p>
             </div>
-            <p className="text-xs ">Шалгах хэрэгтэй</p>
+            <p className="text-xs">Одоо явагдаж буй</p>
           </div>
         </Card>
         <Card className="relative overflow-hidden rounded-2xl bg-[#8AC53E] text-white shadow-lg p-4 h-full">
-          {/* Background Decorative Blobs */}
-
-          {/* Curve: Top-Left */}
-
           <div className="absolute top-[-30%] left-[-20%] w-[60%] h-[80%] bg-[#006838] rounded-[50%] opacity-60" />
-
-          {/* Curve: Bottom-Right */}
-
           <div className="absolute bottom-[-30%] right-[-20%] w-[50%] h-[70%] bg-[#006838] rounded-[40%] opacity-70" />
-
-          {/* White Overlay to soften the center (creates the depth) */}
-
           <div className="absolute inset-0 bg-white/10 rounded-full blur-3xl opacity-30" />
-
-          {/* Content Layer (Relative to stay above blobs) */}
-
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div className="space-y-1">
-              <h3 className="text-sm font-bold tracking-tight">Асуултын сан</h3>
-
-              <p className="text-3xl font-semibold">{stats.totalQuestions}</p>
+              <h3 className="text-sm font-bold tracking-tight">Шалгах хэрэгтэй</h3>
+              <p className="text-3xl font-semibold">{stats.pendingGrading}</p>
             </div>
-            <p className="text-xs ">Нийт асуулт</p>
+            <p className="text-xs">Дүн хүлээгдэж буй</p>
           </div>
         </Card>
       </div>

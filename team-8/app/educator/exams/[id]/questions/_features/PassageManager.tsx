@@ -25,6 +25,16 @@ export default function PassageManager({
   examId,
   passages,
 }: PassageManagerProps) {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [contentHtml, setContentHtml] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isFormulaToolOpen, setIsFormulaToolOpen] = useState(false);
+  const [activeFormulaTarget, setActiveFormulaTarget] = useState({
+    id: "passage_content",
+    label: "Эх материалын текст",
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -40,8 +50,11 @@ export default function PassageManager({
       return;
     }
 
-    const form = document.getElementById("passage-form") as HTMLFormElement | null;
-    form?.reset();
+    setTitle("");
+    setContent("");
+    setContentHtml("");
+    setImageUrl("");
+    setIsFormulaToolOpen(false);
     setLoading(false);
   }
 
@@ -58,12 +71,11 @@ export default function PassageManager({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Reading / Passage block</CardTitle>
+        <CardTitle className="text-base">Нийтлэг өгөгдөл / эх материал</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Нэг эх, тайлбар, зураг эсвэл formula context-ийг олон асуултад
-          хуваалцахад ашиглана.
+        <p className="text-xs text-muted-foreground">
+          Нэг зураг, хүснэгт, унших эх зэргийг олон асуултад хамтад нь ашиглах бол энд нэмнэ.
         </p>
 
         {error && (
@@ -78,29 +90,41 @@ export default function PassageManager({
             <Input
               id="passage_title"
               name="title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
               placeholder="Жишээ: Унших эх 1"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="passage_content">Passage текст *</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="passage_content">Эх материалын текст</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsFormulaToolOpen((prev) => !prev)}
+              >
+                Томьёоны самбар
+                <span className="ml-2 text-xs text-muted-foreground">
+                  {isFormulaToolOpen ? "Хаах" : "Нээх"}
+                </span>
+              </Button>
+            </div>
             <Textarea
               id="passage_content"
               name="content"
-              placeholder="Нийтлэг эх, тайлбар эсвэл бодлогын нөхцөл..."
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              onFocus={() =>
+                setActiveFormulaTarget({
+                  id: "passage_content",
+                  label: "Эх материалын текст",
+                })
+              }
+              placeholder="Нийтлэг эх, тайлбар, бодлогын нөхцөл эсвэл өгөгдлөө бичнэ..."
               rows={4}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="passage_content_html">Форматтай контент (HTML)</Label>
-            <Textarea
-              id="passage_content_html"
-              name="content_html"
-              placeholder="<p>LaTeX, онцлох хэсэг, холбоос, формат...</p>"
-              rows={4}
-            />
-            <LatexShortcutPanel targetId="passage_content_html" />
           </div>
 
           <div className="space-y-2">
@@ -109,24 +133,99 @@ export default function PassageManager({
               id="passage_image_url"
               name="image_url"
               type="url"
+              value={imageUrl}
+              onChange={(event) => setImageUrl(event.target.value)}
               placeholder="https://example.com/passage-image.png"
             />
+            <p className="text-xs text-muted-foreground">
+              Зөвхөн зурагтай материал үүсгэж болно. Хэрэв тайлбар хэрэгтэй бол текст эсвэл HTML нэмнэ.
+            </p>
           </div>
 
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={() => setShowAdvanced((prev) => !prev)}
+          >
+            {showAdvanced ? "HTML хаах ✕" : "HTML / хүснэгт нэмэх"}
+          </Button>
+
+          {showAdvanced && (
+            <div className="space-y-2">
+              <Label htmlFor="passage_content_html">
+                HTML контент
+              </Label>
+              <Textarea
+                id="passage_content_html"
+                name="content_html"
+                value={contentHtml}
+                onChange={(event) => setContentHtml(event.target.value)}
+                onFocus={() =>
+                  setActiveFormulaTarget({
+                    id: "passage_content_html",
+                    label: "HTML контент",
+                  })
+                }
+                placeholder="<table>...</table> эсвэл форматтай контент"
+                rows={3}
+              />
+            </div>
+          )}
+
+          {!showAdvanced && (
+            <input type="hidden" name="content_html" value={contentHtml} />
+          )}
+
+          {isFormulaToolOpen && (
+            <LatexShortcutPanel
+              targetId={activeFormulaTarget.id}
+              targetLabel={activeFormulaTarget.label}
+              title="Эх материалын томьёоны самбар"
+              description="Текст эсвэл HTML талбар дээр дарж байгаад томьёо, тэмдэгтээ оруулна."
+            />
+          )}
+
+          {(content.trim() || contentHtml.trim() || imageUrl.trim()) && (
+            <div className="space-y-3 rounded-xl border bg-muted/10 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium">Урьдчилан харах</p>
+                <p className="text-xs text-muted-foreground">
+                  Сурагчид энэ өгөгдөл дээрээс олон асуулт авна
+                </p>
+              </div>
+              {title.trim() && <p className="font-medium">{title.trim()}</p>}
+              <MathContent
+                html={contentHtml || null}
+                text={content || null}
+                className="prose prose-sm max-w-none text-foreground"
+              />
+              {imageUrl.trim() && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imageUrl}
+                  alt="Эх материалын зураг"
+                  className="max-h-64 rounded-lg border"
+                />
+              )}
+            </div>
+          )}
+
           <Button type="submit" disabled={loading} className="w-full">
-            {loading ? "Нэмж байна..." : "Passage block нэмэх"}
+            {loading ? "Нэмж байна..." : "Эх материал нэмэх"}
           </Button>
         </form>
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Блокуудаа</h3>
+            <h3 className="font-semibold">Үүсгэсэн эх материалууд</h3>
             <Badge variant="outline">{passages.length}</Badge>
           </div>
 
           {passages.length === 0 ? (
             <div className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
-              Одоогоор passage block байхгүй байна.
+              Одоогоор эх материал үүсгээгүй байна.
             </div>
           ) : (
             passages.map((passage, index) => (
@@ -134,7 +233,7 @@ export default function PassageManager({
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Badge variant="secondary">Block {index + 1}</Badge>
+                      <Badge variant="secondary">Материал {index + 1}</Badge>
                       {passage.title && (
                         <span className="font-medium">{passage.title}</span>
                       )}
@@ -148,7 +247,7 @@ export default function PassageManager({
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={passage.image_url}
-                        alt="Passage зураг"
+                        alt="Эх материалын зураг"
                         className="max-h-48 rounded-lg border"
                       />
                     )}

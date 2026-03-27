@@ -62,13 +62,14 @@ function createEmptyMatchingPair(): MatchingPair {
   return { left: "", right: "" };
 }
 
-export default function AddQuestionForm({ examId }: Props) {
+export default function AddQuestionForm({ examId, passages }: Props) {
   const [type, setType] = useState<QuestionType>("multiple_choice");
   const [isFormulaToolOpen, setIsFormulaToolOpen] = useState(false);
   const [activeFormulaTarget, setActiveFormulaTarget] = useState({
     id: "content",
     label: "Асуулт",
   });
+  const [selectedPassageId, setSelectedPassageId] = useState("__none");
   const [content, setContent] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [correctAnswer, setCorrectAnswer] = useState("");
@@ -77,7 +78,9 @@ export default function AddQuestionForm({ examId }: Props) {
     createEmptyMatchingPair(),
     createEmptyMatchingPair(),
   ]);
+  const [points, setPoints] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   function resetTypeState(nextType: QuestionType) {
@@ -86,6 +89,38 @@ export default function AddQuestionForm({ examId }: Props) {
     setCorrectAnswer("");
     setMultipleCorrectAnswers([]);
     setMatchingPairs([createEmptyMatchingPair(), createEmptyMatchingPair()]);
+  }
+
+  const selectedPassage =
+    selectedPassageId === "__none"
+      ? null
+      : passages.find((passage) => passage.id === selectedPassageId) ?? null;
+
+  function getActiveTargetValue() {
+    if (activeFormulaTarget.id === "content") {
+      return content;
+    }
+
+    if (activeFormulaTarget.id === "fill_blank_answer") {
+      return correctAnswer;
+    }
+
+    if (activeFormulaTarget.id.startsWith("option-")) {
+      const index = Number(activeFormulaTarget.id.replace("option-", ""));
+      return Number.isNaN(index) ? "" : options[index] ?? "";
+    }
+
+    if (activeFormulaTarget.id.startsWith("matching-left-")) {
+      const index = Number(activeFormulaTarget.id.replace("matching-left-", ""));
+      return Number.isNaN(index) ? "" : matchingPairs[index]?.left ?? "";
+    }
+
+    if (activeFormulaTarget.id.startsWith("matching-right-")) {
+      const index = Number(activeFormulaTarget.id.replace("matching-right-", ""));
+      return Number.isNaN(index) ? "" : matchingPairs[index]?.right ?? "";
+    }
+
+    return "";
   }
 
   function applyParsedQuestion(rawText: string) {
@@ -210,13 +245,16 @@ export default function AddQuestionForm({ examId }: Props) {
     setError(null);
 
     formData.set("type", type);
-    formData.set("points", "1");
+    formData.set("points", String(points));
     formData.set("difficulty", "medium");
     formData.set("tags", "");
     formData.set("content_html", "");
     formData.set("image_url", "");
     formData.set("explanation", "");
-    formData.set("passage_id", "");
+    formData.set(
+      "passage_id",
+      selectedPassageId === "__none" ? "" : selectedPassageId
+    );
 
     if (type === "multiple_choice") {
       const validOptions = options.map((option) => option.trim()).filter(Boolean);
@@ -295,43 +333,40 @@ export default function AddQuestionForm({ examId }: Props) {
     resetTypeState(type);
     setIsFormulaToolOpen(false);
     setContent("");
+    setPoints(1);
+    setSelectedPassageId("__none");
 
     const form = document.getElementById("question-form") as HTMLFormElement | null;
     form?.reset();
     setLoading(false);
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
   }
 
+  const activeTargetValue = getActiveTargetValue().trim();
+
   return (
-    <Card>
+      <Card>
       <CardHeader>
         <CardTitle className="text-base">Асуулт нэмэх</CardTitle>
       </CardHeader>
       <CardContent>
-        <form id="question-form" action={handleSubmit} className="space-y-5">
+        <form id="question-form" action={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-[1fr_auto] items-start gap-2">
-            <Label>Асуултын төрөл</Label>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              aria-controls="question-formula-tool"
-              aria-expanded={isFormulaToolOpen}
-              onClick={() => setIsFormulaToolOpen((prev) => !prev)}
-            >
-              Томьёоны самбар
-              <span className="ml-2 text-xs text-muted-foreground">
-                {isFormulaToolOpen ? "Хаах" : "Нээх"}
-              </span>
-            </Button>
+          {success && (
+            <div className="rounded-md bg-green-500/10 p-3 text-sm text-green-700">
+              Асуулт амжилттай нэмэгдлээ!
+            </div>
+          )}
 
-            <div className="col-span-2">
+          <div className="grid gap-3 sm:grid-cols-[1fr_80px]">
+            <div className="space-y-1.5">
+              <Label>Төрөл</Label>
               <Select
                 value={type}
                 onValueChange={(value) => resetTypeState(value as QuestionType)}
@@ -343,30 +378,115 @@ export default function AddQuestionForm({ examId }: Props) {
                   {questionTypes.map((questionType) => (
                     <SelectItem key={questionType.value} value={questionType.value}>
                       {questionType.label}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        — {questionType.hint}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <p className="col-span-2 text-sm text-muted-foreground">
-              {questionTypes.find((item) => item.value === type)?.hint}
-            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="question-points">Оноо</Label>
+              <Input
+                id="question-points"
+                type="number"
+                min={1}
+                max={100}
+                value={points}
+                onChange={(event) => setPoints(Math.max(1, Number(event.target.value) || 1))}
+                className="text-center"
+              />
+            </div>
           </div>
 
+          {passages.length > 0 && (
+            <div className="space-y-2">
+              <Label>Нийтлэг өгөгдөл / эх материал</Label>
+              <Select value={selectedPassageId} onValueChange={setSelectedPassageId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Эх материал холбохгүй" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none">Холбохгүй</SelectItem>
+                  {passages.map((passage, index) => (
+                    <SelectItem key={passage.id} value={passage.id}>
+                      {passage.title || `Материал ${index + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Зураг, хүснэгт, текст эсвэл нэг өгөгдлөөс олон асуулт асуух үед энд холбоно.
+              </p>
+            </div>
+          )}
+
+          {selectedPassage && (
+            <div className="space-y-2 rounded-xl border border-dashed bg-muted/20 p-4">
+              <p className="text-sm font-medium">Сонгосон эх материал</p>
+              {selectedPassage.title && (
+                <p className="text-sm text-muted-foreground">{selectedPassage.title}</p>
+              )}
+              <MathContent
+                html={selectedPassage.content_html}
+                text={selectedPassage.content}
+                className="prose max-w-none text-sm leading-6 text-foreground"
+              />
+              {selectedPassage.image_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={selectedPassage.image_url}
+                  alt="Сонгосон эх материалын зураг"
+                  className="max-h-56 rounded-lg border"
+                />
+              )}
+            </div>
+          )}
+
           {isFormulaToolOpen && (
-            <div id="question-formula-tool">
+            <div id="question-formula-tool" className="space-y-3">
               <LatexShortcutPanel
                 targetId={activeFormulaTarget.id}
                 targetLabel={activeFormulaTarget.label}
                 title="Томьёоны самбар"
-                description="Cursor-оо байрлуулсан талбартаа томьёо, тэмдэгтээ шууд оруулна."
+                description="Асуулт, сонголт, зөв хариулт эсвэл холбох мөр дээр дарж байгаад томьёогоо шууд оруулна."
               />
+              {activeTargetValue && (
+                <div className="rounded-xl border bg-muted/10 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">
+                      Идэвхтэй талбарын урьдчилан харах
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {activeFormulaTarget.label}
+                    </p>
+                  </div>
+                  <div className="mt-3">
+                    <MathContent
+                      text={activeTargetValue}
+                      className="prose max-w-none text-sm leading-6 text-foreground"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="content">Асуулт</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="content">Асуулт</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={() => setIsFormulaToolOpen((prev) => !prev)}
+              >
+                {isFormulaToolOpen ? "Томьёо ✕" : "𝑓(x) Томьёо"}
+              </Button>
+            </div>
             <Textarea
               id="content"
               name="content"
@@ -379,24 +499,15 @@ export default function AddQuestionForm({ examId }: Props) {
                   label: "Асуулт",
                 })
               }
-              placeholder="Асуултаа энд бичнэ үү..."
-              rows={4}
+              placeholder="Асуултаа энд бичнэ үү... (paste хийвэл автомат таних)"
+              rows={3}
               required
             />
-            <p className="text-xs text-muted-foreground">
-              Word, Docs эсвэл өөр газраас асуулт, сонголт, зөв хариулттай
-              текстээ paste хийвэл автоматаар таньж бөглөнө.
-            </p>
           </div>
 
           {content.trim() && (
-            <div className="space-y-2 rounded-xl border bg-muted/10 p-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium">Урьдчилан харах</p>
-                <p className="text-xs text-muted-foreground">
-                  Томьёо хэрхэн render болохыг эндээс шууд шалгана.
-                </p>
-              </div>
+            <div className="rounded-lg border bg-muted/10 p-3">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Урьдчилсан харагдах байдал</p>
               <MathContent
                 text={content}
                 className="prose max-w-none text-sm leading-6 text-foreground"

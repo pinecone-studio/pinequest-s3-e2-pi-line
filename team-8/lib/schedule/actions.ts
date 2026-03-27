@@ -24,6 +24,21 @@ type ExamRow = {
   conflicts: ConflictInfo[];
 };
 
+function getOccupiedEndMs(exam: Pick<ExamRow, "end_time" | "duration_minutes">) {
+  const closeTimeMs = new Date(exam.end_time).getTime();
+  const durationMs = Number(exam.duration_minutes ?? 0) * 60 * 1000;
+
+  if (
+    Number.isNaN(closeTimeMs) ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return closeTimeMs;
+  }
+
+  return closeTimeMs + durationMs;
+}
+
 async function isAdminUser(
   supabase: SupabaseServerClient,
   userId: string
@@ -119,14 +134,14 @@ async function applyLocalConflictFallback(
 
   for (const exam of rows) {
     const eStart = new Date(exam.start_time).getTime();
-    const eEnd = new Date(exam.end_time).getTime();
+    const eEnd = getOccupiedEndMs(exam);
     const examStudents = getExamStudents(exam);
 
     for (const other of rows) {
       if (other.id === exam.id) continue;
 
       const oStart = new Date(other.start_time).getTime();
-      const oEnd = new Date(other.end_time).getTime();
+      const oEnd = getOccupiedEndMs(other);
       const overlaps = eStart < oEnd && eEnd > oStart;
 
       if (!overlaps) continue;
@@ -324,7 +339,7 @@ export async function setExamRoom(examId: string, room: string | null) {
 
   const { data: exam } = await supabase
     .from("exams")
-    .select("start_time, end_time")
+    .select("start_time, end_time, duration_minutes")
     .eq("id", examId)
     .maybeSingle();
 
@@ -336,12 +351,20 @@ export async function setExamRoom(examId: string, room: string | null) {
     return { success: true };
   }
 
+  const occupiedEndMs = getOccupiedEndMs({
+    end_time: exam.end_time,
+    duration_minutes: Number(exam.duration_minutes ?? 0),
+  });
+  const occupiedEndTime = Number.isNaN(occupiedEndMs)
+    ? exam.end_time
+    : new Date(occupiedEndMs).toISOString();
+
   const { error } = await supabase.from("exam_schedules").upsert(
     {
       exam_id: examId,
       room: room.trim(),
       start_time: exam.start_time,
-      end_time: exam.end_time,
+      end_time: occupiedEndTime,
     },
     { onConflict: "exam_id" }
   );

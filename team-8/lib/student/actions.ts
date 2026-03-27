@@ -150,6 +150,23 @@ function getSubmitSessionLockKey(sessionId: string) {
   return `lock:exam-submit:${sessionId}`;
 }
 
+function getExamPayloadCacheTtlSeconds(
+  exam: Pick<StudentAssignedExam, "end_time" | "duration_minutes">
+) {
+  const closeTimeMs = new Date(exam.end_time).getTime();
+  const durationMs = Number(exam.duration_minutes ?? 0) * 60 * 1000;
+  const latestUsefulTimeMs =
+    Number.isNaN(closeTimeMs) || !Number.isFinite(durationMs) || durationMs <= 0
+      ? closeTimeMs
+      : closeTimeMs + durationMs;
+  const ttlSeconds = Math.max(
+    Math.floor((latestUsefulTimeMs - Date.now()) / 1000),
+    60
+  );
+
+  return ttlSeconds;
+}
+
 async function getInProgressSession(
   supabase: SupabaseServerClient,
   examId: string,
@@ -352,9 +369,7 @@ async function loadStudentExamPayload(
       questions: result.questions,
     };
 
-    const endTime = new Date(exam.end_time).getTime();
-    const now = Date.now();
-    const ttlSeconds = Math.max(Math.floor((endTime - now) / 1000), 60);
+    const ttlSeconds = getExamPayloadCacheTtlSeconds(exam);
     await redis.set(cacheKey, JSON.stringify(cachePayload), { ex: ttlSeconds });
     return result;
   }
@@ -380,9 +395,7 @@ async function loadStudentExamPayload(
     questions: passageAwareQuestions,
   };
 
-  const endTime = new Date(exam.end_time).getTime();
-  const now = Date.now();
-  const ttlSeconds = Math.max(Math.floor((endTime - now) / 1000), 60);
+  const ttlSeconds = getExamPayloadCacheTtlSeconds(exam);
   await redis.set(cacheKey, JSON.stringify(cachePayload), { ex: ttlSeconds });
 
   return result;
@@ -935,14 +948,6 @@ async function startExamSessionForUser(
   const startTime = new Date(exam.start_time as string).getTime();
   const endTime = new Date(exam.end_time as string).getTime();
 
-  if (now < startTime) {
-    return { error: "Шалгалт хараахан эхлээгүй байна" };
-  }
-
-  if (now > endTime) {
-    return { error: "Шалгалтын хугацаа дууссан байна" };
-  }
-
   const existingInProgress = await getInProgressSession(
     supabase,
     examId,
@@ -971,6 +976,14 @@ async function startExamSessionForUser(
       await cacheSessionMeta(existingInProgress.id, userId, "in_progress");
       return { session: existingInProgress };
     }
+  }
+
+  if (now < startTime) {
+    return { error: "Шалгалт хараахан нээгдээгүй байна" };
+  }
+
+  if (now > endTime) {
+    return { error: "Шалгалтыг эхлүүлэх нээлттэй цонх хаагдсан байна" };
   }
 
   const lockKey = getStartSessionLockKey(examId, userId);
@@ -1168,9 +1181,8 @@ export async function prepareExamTakePayload(
   const exam = assignedExam.exam;
   const now = Date.now();
   const startTime = new Date(exam.start_time as string).getTime();
-  const endTime = new Date(exam.end_time as string).getTime();
 
-  if (now < startTime || now > endTime) {
+  if (now < startTime) {
     return {
       redirectTo: `/student/exams?error=time_window&exam=${encodeURIComponent(exam.title)}`,
     } as const;
@@ -1199,9 +1211,8 @@ export async function prepareExamTakePayload(
   const sessionEndsAt =
     new Date(session.started_at).getTime() +
     Number(examPayload.exam.duration_minutes) * 60 * 1000;
-  const examEndsAt = new Date(examPayload.exam.end_time as string).getTime();
   const initialTimeLeftSeconds = Math.max(
-    Math.floor((Math.min(sessionEndsAt, examEndsAt) - nowMs) / 1000),
+    Math.floor((sessionEndsAt - nowMs) / 1000),
     0
   );
 

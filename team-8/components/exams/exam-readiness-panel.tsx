@@ -139,9 +139,10 @@ export default function ExamReadinessPanel({
               Хуваарь
             </div>
             <p className="mt-2 text-base font-semibold">
-              {readiness.durationMinutes} / {readiness.scheduleWindowMinutes} минут
+              {readiness.durationMinutes} мин үргэлжилнэ
             </p>
             <p className="text-xs text-muted-foreground">
+              Нээгдэх цонх: {readiness.scheduleWindowMinutes} минут ·{" "}
               {readiness.conflictMessage ? "Давхцал илэрсэн" : "Давхцалгүй"}
             </p>
           </div>

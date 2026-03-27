@@ -146,16 +146,23 @@ export default function GradingForm({
   };
 
   const handleFinalize = async () => {
+    const ungradedAnswers = answers.filter((a) => scores[a.id] === undefined);
+
+    if (ungradedAnswers.length > 0) {
+      const confirmed = confirm(
+        `${ungradedAnswers.length} хариулт шалгагдаагүй байна. Шалгаагүй хариултуудад 0 оноо өгөгдөнө. Үргэлжлүүлэх үү?`
+      );
+      if (!confirmed) return;
+    }
+
     setFinalizing(true);
 
-    for (const a of answers) {
-      if (scores[a.id] === undefined) {
-        const result = await gradeAnswer(a.id, 0, null);
-        if (result.error) {
-          alert(result.error);
-          setFinalizing(false);
-          return;
-        }
+    for (const a of ungradedAnswers) {
+      const result = await gradeAnswer(a.id, 0, null);
+      if (result.error) {
+        alert(result.error);
+        setFinalizing(false);
+        return;
       }
     }
 

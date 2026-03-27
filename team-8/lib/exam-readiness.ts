@@ -240,26 +240,22 @@ async function buildExamReadinessForOwner(
     },
     {
       key: "schedule",
-      label: "Хуваарь",
+      label: "Нээгдэх цонх",
       description:
         scheduleWindowMinutes > 0
-          ? `Нээлттэй цонх ${scheduleWindowMinutes} минут байна.`
-          : "Эхлэх, дуусах цагийн хооронд зөрүү байх ёстой.",
+          ? `Шалгалтыг ${scheduleWindowMinutes} минутын турш эхлүүлж болно.`
+          : "Хаагдах хугацаа нь нээгдэх хугацаанаас хойш байх ёстой.",
       status: scheduleWindowMinutes > 0 ? "complete" : "blocked",
     },
     {
       key: "duration",
       label: "Шалгалтын хугацаа",
       description:
-        scheduleWindowMinutes > 0 &&
-        Number(exam.duration_minutes) <= scheduleWindowMinutes
-          ? `${exam.duration_minutes} минутын хугацаа нээлттэй цонхонд багтаж байна.`
-          : "Шалгалтын хугацаа нь нээлттэй цонхоос урт байна.",
+        Number(exam.duration_minutes) > 0
+          ? `${exam.duration_minutes} минутын хугацааг сурагч шалгалтаа эхлүүлсний дараа бүтнээр нь ашиглана.`
+          : "Шалгалтын үргэлжлэх хугацаа 0-ээс их байх ёстой.",
       status:
-        scheduleWindowMinutes > 0 &&
-        Number(exam.duration_minutes) <= scheduleWindowMinutes
-          ? "complete"
-          : "blocked",
+        Number(exam.duration_minutes) > 0 ? "complete" : "blocked",
     },
     {
       key: "questions",
@@ -333,6 +329,7 @@ async function buildExamReadinessForOwner(
     assignedStudentCount,
     pendingGradingCount: sessionSummary.pendingGradingCount,
     gradedCount: sessionSummary.gradedCount,
+    inProgressCount: sessionSummary.inProgressCount,
     hasBlockingIssues: blockedCount > 0,
   });
 

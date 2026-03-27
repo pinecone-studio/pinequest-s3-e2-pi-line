@@ -9,6 +9,7 @@ interface ScheduledExam {
   title: string;
   start_time: string;
   end_time: string;
+  duration_minutes: number;
 }
 
 interface ConflictRow {
@@ -44,11 +45,26 @@ async function getExamSchedule(
 ): Promise<ScheduledExam | null> {
   const { data } = await supabase
     .from("exams")
-    .select("id, title, start_time, end_time")
+    .select("id, title, start_time, end_time, duration_minutes")
     .eq("id", examId)
     .maybeSingle();
 
   return data;
+}
+
+function getExamOccupiedEndMs(exam: Pick<ScheduledExam, "end_time" | "duration_minutes">) {
+  const closeTimeMs = new Date(exam.end_time).getTime();
+  const durationMs = Number(exam.duration_minutes ?? 0) * 60 * 1000;
+
+  if (
+    Number.isNaN(closeTimeMs) ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return closeTimeMs;
+  }
+
+  return closeTimeMs + durationMs;
 }
 
 async function getGroupStudentIds(
@@ -77,6 +93,7 @@ async function getConflictingAssignmentsForStudentsViaRpc(
     p_group_ids: groupIds,
     p_start_time: exam.start_time,
     p_end_time: exam.end_time,
+    p_duration_minutes: exam.duration_minutes,
   });
 
   if (error) {
@@ -108,7 +125,9 @@ export async function getGroupAssignmentConflictError(
   supabase: SupabaseServerClient,
   groupId: string,
   examId: string,
-  overrides?: Partial<Pick<ScheduledExam, "title" | "start_time" | "end_time">>
+  overrides?: Partial<
+    Pick<ScheduledExam, "title" | "start_time" | "end_time" | "duration_minutes">
+  >
 ) {
   const exam = await getExamSchedule(supabase, examId);
   if (!exam) return "Шалгалтын хуваарь олдсонгүй";
@@ -118,6 +137,7 @@ export async function getGroupAssignmentConflictError(
     title: overrides?.title ?? exam.title,
     start_time: overrides?.start_time ?? exam.start_time,
     end_time: overrides?.end_time ?? exam.end_time,
+    duration_minutes: overrides?.duration_minutes ?? exam.duration_minutes,
   };
 
   const studentIds = await getGroupStudentIds(supabase, groupId);
@@ -146,7 +166,9 @@ export async function getGroupAssignmentConflictError(
 export async function getExamAssignmentConflictError(
   supabase: SupabaseServerClient,
   examId: string,
-  overrides?: Partial<Pick<ScheduledExam, "title" | "start_time" | "end_time">>
+  overrides?: Partial<
+    Pick<ScheduledExam, "title" | "start_time" | "end_time" | "duration_minutes">
+  >
 ) {
   const exam = await getExamSchedule(supabase, examId);
   if (!exam) return "Шалгалтын хуваарь олдсонгүй";
@@ -159,6 +181,7 @@ export async function getExamAssignmentConflictError(
     title: overrides?.title ?? exam.title,
     start_time: overrides?.start_time ?? exam.start_time,
     end_time: overrides?.end_time ?? exam.end_time,
+    duration_minutes: overrides?.duration_minutes ?? exam.duration_minutes,
   };
 
   const conflictResult = await getConflictingAssignmentsForStudentsViaRpc(
@@ -187,7 +210,7 @@ export async function getGroupMemberConflictError(
   // Get all exams assigned to the target group
   const { data: groupExamRows } = await supabase
     .from("exam_assignments")
-    .select("exam_id, exams!inner(id, title, start_time, end_time)")
+    .select("exam_id, exams!inner(id, title, start_time, end_time, duration_minutes)")
     .eq("group_id", groupId);
 
   if (!groupExamRows || groupExamRows.length === 0) return null;
@@ -206,7 +229,7 @@ export async function getGroupMemberConflictError(
   // Get all exams assigned to the student's other groups
   const { data: otherExamRows } = await supabase
     .from("exam_assignments")
-    .select("exam_id, exams!inner(id, title, start_time, end_time)")
+    .select("exam_id, exams!inner(id, title, start_time, end_time, duration_minutes)")
     .in("group_id", otherGroupIds);
 
   if (!otherExamRows || otherExamRows.length === 0) return null;
@@ -216,13 +239,19 @@ export async function getGroupMemberConflictError(
     const exam = Array.isArray(ge.exams) ? ge.exams[0] : ge.exams;
     if (!exam) continue;
     const examStart = new Date(exam.start_time).getTime();
-    const examEnd = new Date(exam.end_time).getTime();
+    const examEnd = getExamOccupiedEndMs({
+      end_time: exam.end_time,
+      duration_minutes: Number(exam.duration_minutes ?? 0),
+    });
 
     for (const oe of otherExamRows) {
       const other = Array.isArray(oe.exams) ? oe.exams[0] : oe.exams;
       if (!other || other.id === exam.id) continue;
       const otherStart = new Date(other.start_time).getTime();
-      const otherEnd = new Date(other.end_time).getTime();
+      const otherEnd = getExamOccupiedEndMs({
+        end_time: other.end_time,
+        duration_minutes: Number(other.duration_minutes ?? 0),
+      });
 
       if (examStart < otherEnd && examEnd > otherStart) {
         return buildConflictError(exam.title, [

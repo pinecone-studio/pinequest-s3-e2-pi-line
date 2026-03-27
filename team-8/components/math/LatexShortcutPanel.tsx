@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 
 const CURSOR_MARKER = "__cursor__";
 const SELECTION_MARKER = "__selection__";
@@ -153,6 +154,32 @@ interface LatexShortcutPanelProps {
   description?: string;
 }
 
+const quickSymbols = [
+  { label: "x²", snippet: "$x^2$" },
+  { label: "√x", snippet: "$\\sqrt{x}$" },
+  { label: "π", snippet: "$\\pi$" },
+  { label: "≤", snippet: "$\\le$" },
+  { label: "∑", snippet: "$\\sum_{i=1}^{n} x_i$" },
+  { label: "∫", snippet: "$\\int_a^b f(x)\\,dx$" },
+];
+
+function setNativeFieldValue(
+  field: HTMLTextAreaElement | HTMLInputElement,
+  nextValue: string
+) {
+  const prototype =
+    field instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+  if (descriptor?.set) {
+    descriptor.set.call(field, nextValue);
+    return;
+  }
+
+  field.value = nextValue;
+}
+
 export default function LatexShortcutPanel({
   targetId,
   targetLabel = "Асуултын талбар",
@@ -161,6 +188,7 @@ export default function LatexShortcutPanel({
 }: LatexShortcutPanelProps) {
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState(formulaGroups[0]?.id ?? "basic");
+  const [insertError, setInsertError] = useState<string | null>(null);
 
   const filteredGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -190,26 +218,33 @@ export default function LatexShortcutPanel({
       | HTMLInputElement
       | null;
 
-    if (!field) return;
+    if (!field) {
+      setInsertError(
+        "Талбар олдсонгүй. Эхлээд асуулт эсвэл хариултын талбар дээр дарж байгаад томьёогоо сонгоно уу."
+      );
+      return;
+    }
 
     const start = field.selectionStart ?? field.value.length;
     const end = field.selectionEnd ?? field.value.length;
     const selectedText = field.value.slice(start, end);
+    const replacementText = selectedText || "x";
 
-    const preparedSnippet = snippet.replaceAll(SELECTION_MARKER, selectedText);
+    const preparedSnippet = snippet.replaceAll(SELECTION_MARKER, replacementText);
     const cursorIndex = preparedSnippet.indexOf(CURSOR_MARKER);
     const cleanSnippet = preparedSnippet.replace(CURSOR_MARKER, "");
 
     const nextValue =
       field.value.slice(0, start) + cleanSnippet + field.value.slice(end);
 
-    field.value = nextValue;
+    setNativeFieldValue(field, nextValue);
     field.focus();
 
     const caret =
       start + (cursorIndex >= 0 ? cursorIndex : cleanSnippet.length);
     field.setSelectionRange?.(caret, caret);
     field.dispatchEvent(new Event("input", { bubbles: true }));
+    setInsertError(null);
   }
 
   return (
@@ -236,6 +271,37 @@ export default function LatexShortcutPanel({
           />
         </div>
       </div>
+
+      <div className="space-y-2 rounded-lg border bg-muted/5 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs font-medium text-muted-foreground">
+            Хурдан оруулах тэмдэг, томьёонууд
+          </p>
+          <Badge variant="outline" className="text-[11px]">
+            1. Талбар дээр дар 2. Томьёо сонго
+          </Badge>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {quickSymbols.map((item) => (
+            <Button
+              key={item.label}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 rounded-full px-3 text-xs"
+              onClick={() => insertSnippet(item.snippet)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {insertError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {insertError}
+        </div>
+      )}
 
       {filteredGroups.length > 0 ? (
         <Tabs value={resolvedActiveTab} onValueChange={setActiveTab} className="gap-3">

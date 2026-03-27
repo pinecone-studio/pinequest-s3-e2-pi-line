@@ -490,8 +490,10 @@ export async function addQuestionPassage(examId: string, formData: FormData) {
     (formData.get("content_html") as string)?.trim() || null;
   const image_url = (formData.get("image_url") as string)?.trim() || null;
 
-  if (!content && !content_html) {
-    return { error: "Passage-ийн агуулгыг оруулна уу." };
+  if (!content && !content_html && !image_url) {
+    return {
+      error: "Эх материалын текст, HTML эсвэл зургийн аль нэгийг оруулна уу.",
+    };
   }
 
   const { data: existing, error: existingError } = await supabase
@@ -514,7 +516,7 @@ export async function addQuestionPassage(examId: string, formData: FormData) {
   const { error } = await supabase.from("question_passages").insert({
     exam_id: examId,
     title,
-    content: content || title || "Passage",
+    content: content || title || "Материал",
     content_html,
     image_url,
     order_index,
@@ -606,15 +608,17 @@ export async function updateQuestionPassage(
     String(formData.get("content_html") || "").trim() || null;
   const image_url = String(formData.get("image_url") || "").trim() || null;
 
-  if (!content && !content_html) {
-    return { error: "Passage-ийн агуулгыг оруулна уу." };
+  if (!content && !content_html && !image_url) {
+    return {
+      error: "Эх материалын текст, HTML эсвэл зургийн аль нэгийг оруулна уу.",
+    };
   }
 
   const { error } = await supabase
     .from("question_passages")
     .update({
       title,
-      content: content || title || "Passage",
+      content: content || title || "Материал",
       content_html,
       image_url,
     })

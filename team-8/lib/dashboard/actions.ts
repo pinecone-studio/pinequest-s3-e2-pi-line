@@ -95,12 +95,9 @@ export async function getEducatorStats() {
   const scopeExamIds = [...teachingScopeExamIds];
 
   const [questionsRes, activeRes, upcomingRes, submittedSessionsRes] = await Promise.all([
-    ownExamIds.length > 0
-      ? supabase
-          .from("questions")
-          .select("id", { count: "exact", head: true })
-          .in("exam_id", ownExamIds)
-      : Promise.resolve({ count: 0 }),
+    supabase
+      .from("question_bank")
+      .select("id", { count: "exact", head: true }),
     ownExamIds.length > 0
       ? supabase
           .from("exams")
@@ -199,7 +196,7 @@ export async function getEducatorStats() {
 
   return {
     totalExams: ownExamIds.length,
-    totalQuestions: "error" in questionsRes ? 0 : (questionsRes.count ?? 0),
+    totalQuestions: questionsRes && "count" in questionsRes ? (questionsRes.count ?? 0) : 0,
     activeExams: "error" in activeRes ? 0 : (activeRes.count ?? 0),
     pendingGrading: filteredSubmittedSessions.length,
     upcomingExams,

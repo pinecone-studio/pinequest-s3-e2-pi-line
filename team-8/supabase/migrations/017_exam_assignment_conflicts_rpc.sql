@@ -10,7 +10,8 @@ CREATE OR REPLACE FUNCTION public.get_exam_assignment_conflicts(
   p_exam_id uuid,
   p_group_ids uuid[],
   p_start_time timestamptz DEFAULT NULL,
-  p_end_time timestamptz DEFAULT NULL
+  p_end_time timestamptz DEFAULT NULL,
+  p_duration_minutes integer DEFAULT NULL
 )
 RETURNS TABLE (
   student_id uuid,
@@ -27,7 +28,8 @@ AS $$
     SELECT
       e.id,
       COALESCE(p_start_time, e.start_time) AS start_time,
-      COALESCE(p_end_time, e.end_time) AS end_time
+      COALESCE(p_end_time, e.end_time) AS end_time,
+      COALESCE(p_duration_minutes, e.duration_minutes) AS duration_minutes
     FROM public.exams e
     WHERE e.id = p_exam_id
       AND public.auth_is_exam_owner_or_admin(e.id)
@@ -60,9 +62,9 @@ AS $$
   JOIN public.exams e2
     ON e2.id = ea.exam_id
   WHERE e2.id <> be.id
-    AND be.start_time < e2.end_time
-    AND be.end_time > e2.start_time;
+    AND be.start_time < (e2.end_time + make_interval(mins => COALESCE(e2.duration_minutes, 0)))
+    AND (be.end_time + make_interval(mins => COALESCE(be.duration_minutes, 0))) > e2.start_time;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_exam_assignment_conflicts(uuid, uuid[], timestamptz, timestamptz) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_exam_assignment_conflicts(uuid, uuid[], timestamptz, timestamptz) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_exam_assignment_conflicts(uuid, uuid[], timestamptz, timestamptz, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_exam_assignment_conflicts(uuid, uuid[], timestamptz, timestamptz, integer) TO authenticated;
