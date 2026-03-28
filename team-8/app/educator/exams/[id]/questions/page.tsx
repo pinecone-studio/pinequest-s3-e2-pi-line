@@ -31,7 +31,7 @@ export default async function ExamQuestionsPage({ params }: Props) {
 
   const backHref = exam.is_published
     ? "/educator/exams"
-    : `/educator/exams/${id}/edit`;
+    : `/educator/exams/${id}/edit?step=settings`;
   const backLabel = exam.is_published
     ? "Шалгалтын жагсаалт руу буцах"
     : "Шалгалтын мэдээлэл рүү буцах";
