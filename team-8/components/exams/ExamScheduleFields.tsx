@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import { mn } from "date-fns/locale";
 import {
-  ArrowUpDown,
   CalendarDays,
   ChevronDown,
   Clock3,
@@ -518,12 +517,8 @@ export function ExamScheduleSection({
   );
 }
 
-export function ExamSettingsSection({
-  initialPassingScore,
-  initialMaxAttempts,
-  initialShuffleQuestions = false,
-  initialShuffleOptions = false,
-}: ExamSettingsSectionProps) {
+export function ExamSettingsSection(props: ExamSettingsSectionProps) {
+  const { initialPassingScore, initialMaxAttempts } = props;
   const [attempts, setAttempts] = useState(String(initialMaxAttempts ?? 1));
 
   return (
@@ -573,40 +568,6 @@ export function ExamSettingsSection({
             <input type="hidden" name="max_attempts" value={attempts} />
           </div>
         </SettingsRow>
-
-        <SettingsRow
-          icon={ArrowUpDown}
-          title="Асуултын дараалал"
-          description="Асуултуудыг холих эсэх"
-        >
-          <label className="flex items-center gap-3 text-sm text-zinc-700">
-            <input
-              type="checkbox"
-              id="shuffle_questions"
-              name="shuffle_questions"
-              defaultChecked={initialShuffleQuestions}
-              className="h-4 w-4 rounded border-zinc-300"
-            />
-            <span>Асуултыг санамсаргүй гаргах</span>
-          </label>
-        </SettingsRow>
-
-        <SettingsRow
-          icon={ArrowUpDown}
-          title="Сонголтын дараалал"
-          description="Сонголтуудыг холих эсэх"
-        >
-          <label className="flex items-center gap-3 text-sm text-zinc-700">
-            <input
-              type="checkbox"
-              id="shuffle_options"
-              name="shuffle_options"
-              defaultChecked={initialShuffleOptions}
-              className="h-4 w-4 rounded border-zinc-300"
-            />
-            <span>Сонголтуудын дарааллыг холих</span>
-          </label>
-        </SettingsRow>
       </div>
     </div>
   );
@@ -618,8 +579,6 @@ export default function ExamScheduleFields({
   initialDurationMinutes,
   initialPassingScore,
   initialMaxAttempts,
-  initialShuffleQuestions,
-  initialShuffleOptions,
 }: ExamScheduleFieldsProps) {
   return (
     <div className="space-y-6">
@@ -631,8 +590,6 @@ export default function ExamScheduleFields({
       <ExamSettingsSection
         initialPassingScore={initialPassingScore}
         initialMaxAttempts={initialMaxAttempts}
-        initialShuffleQuestions={initialShuffleQuestions}
-        initialShuffleOptions={initialShuffleOptions}
       />
     </div>
   );

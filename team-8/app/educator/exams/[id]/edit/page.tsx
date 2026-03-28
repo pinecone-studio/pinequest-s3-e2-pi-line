@@ -19,10 +19,12 @@ export default async function EditExamPage({ params, searchParams }: Props) {
   ]);
 
   if (!exam) notFound();
-  if (exam.is_published) redirect(`/educator/exams/${id}/questions`);
+  if (exam.is_published) {
+    redirect(`/educator/exams/${id}/questions`);
+  }
 
-  const assignedGroupIds: string[] = Array.from(
-    new Set(
+  const initialGroupIds: string[] = Array.from(
+    new Set<string>(
       (Array.isArray(exam.exam_assignments) ? exam.exam_assignments : [])
         .map((assignment: { group_id: string }) => String(assignment.group_id))
         .filter(Boolean)
@@ -38,8 +40,9 @@ export default async function EditExamPage({ params, searchParams }: Props) {
       subjects={subjects}
       groups={groups}
       initialTitle={exam.title}
+      initialDescription={exam.description ?? ""}
       initialSubjectId={exam.subject_id}
-      initialGroupIds={assignedGroupIds}
+      initialGroupIds={initialGroupIds}
       initialStartTime={exam.start_time}
       initialEndTime={exam.end_time}
       initialDurationMinutes={exam.duration_minutes}

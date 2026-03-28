@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -51,6 +52,7 @@ interface ExamFormProps {
   examId?: string;
   initialStep?: number;
   initialTitle?: string;
+  initialDescription?: string;
   initialSubjectId?: string | null;
   initialGroupIds?: string[];
   initialStartTime?: string | null;
@@ -63,7 +65,10 @@ interface ExamFormProps {
   initialError?: string | null;
 }
 
-const steps: Array<{ title: string; icon: LucideIcon }> = [
+const steps: Array<{
+  title: string;
+  icon: LucideIcon;
+}> = [
   { title: "Үндсэн мэдээлэл", icon: BookOpen },
   { title: "Хуваарь", icon: CalendarDays },
   { title: "Тохиргоо", icon: Settings },
@@ -144,6 +149,8 @@ function BasicInfoSection({
   onToggleGroup,
   titleValue,
   onTitleChange,
+  descriptionValue,
+  onDescriptionChange,
 }: {
   subjects: SubjectOption[];
   subjectId: string;
@@ -153,6 +160,8 @@ function BasicInfoSection({
   onToggleGroup: (groupId: string) => void;
   titleValue: string;
   onTitleChange: (value: string) => void;
+  descriptionValue: string;
+  onDescriptionChange: (value: string) => void;
 }) {
   return (
     <div className="rounded-[28px] border border-zinc-100 bg-white p-6 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.16)] md:p-8">
@@ -236,6 +245,24 @@ function BasicInfoSection({
             </div>
           )}
         </div>
+
+        <div className="space-y-2.5">
+          <Label
+            htmlFor="description"
+            className="text-sm font-semibold text-zinc-950"
+          >
+            Тайлбар (заавал биш)
+          </Label>
+          <Textarea
+            id="description"
+            name="description"
+            value={descriptionValue}
+            onChange={(event) => onDescriptionChange(event.target.value)}
+            placeholder="Шалгалтын тухай товч тайлбар..."
+            rows={4}
+            className="rounded-2xl border-zinc-200 bg-white px-4 py-3 text-sm shadow-none placeholder:text-zinc-400 focus-visible:ring-zinc-200"
+          />
+        </div>
       </div>
     </div>
   );
@@ -248,6 +275,7 @@ export default function ExamForm({
   examId,
   initialStep = 0,
   initialTitle = "",
+  initialDescription = "",
   initialSubjectId = null,
   initialGroupIds = [],
   initialStartTime,
@@ -271,6 +299,7 @@ export default function ExamForm({
     initialGroupIds
   );
   const [titleValue, setTitleValue] = useState(initialTitle);
+  const [descriptionValue, setDescriptionValue] = useState(initialDescription);
   const isFinalStep = currentStep === steps.length - 1;
 
   useEffect(() => {
@@ -450,6 +479,8 @@ export default function ExamForm({
             onToggleGroup={toggleGroup}
             titleValue={titleValue}
             onTitleChange={setTitleValue}
+            descriptionValue={descriptionValue}
+            onDescriptionChange={setDescriptionValue}
           />
         </div>
 
