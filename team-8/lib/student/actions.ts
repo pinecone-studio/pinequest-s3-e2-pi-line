@@ -26,7 +26,11 @@ type ProctorEventType =
   | "window_blur"
   | "copy_attempt"
   | "paste_attempt"
-  | "context_menu";
+  | "context_menu"
+  | "camera_denied"
+  | "look_left"
+  | "look_right"
+  | "face_missing";
 type ProctorEventMetadata = Record<
   string,
   string | number | boolean | null
