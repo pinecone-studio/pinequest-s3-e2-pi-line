@@ -1,13 +1,7 @@
 import Link from "next/link";
 import { getStudentExams } from "@/lib/student/actions";
 import { formatDateTimeUB } from "@/lib/utils/date";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -18,36 +12,11 @@ export default async function StudentExamsPage({
 }) {
   const { error: errorParam } = await searchParams;
   const exams = await getStudentExams();
-  const readyCount = exams.filter(
-    (exam) =>
-      exam.myLifecycleStatus === "available" ||
-      exam.myLifecycleStatus === "retake_available" ||
-      exam.myLifecycleStatus === "in_progress"
-  ).length;
-  const upcomingCount = exams.filter(
-    (exam) =>
-      exam.myLifecycleStatus === "scheduled" ||
-      exam.myLifecycleStatus === "retake_scheduled"
-  ).length;
-  const finishedCount = exams.filter((exam) =>
-    ["submitted", "graded", "absent", "excused", "timed_out"].includes(
-      String(exam.myLifecycleStatus)
-    )
-  ).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Шалгалтууд</h2>
-        <p className="text-muted-foreground">
-          Танд оноогдсон шалгалтуудын жагсаалт
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2 text-sm">
-        <Badge variant="secondary">Одоо өгөх боломжтой {readyCount}</Badge>
-        <Badge variant="outline">Удахгүй {upcomingCount}</Badge>
-        <Badge variant="outline">Дууссан {finishedCount}</Badge>
       </div>
 
       {errorParam && (
@@ -64,11 +33,11 @@ export default async function StudentExamsPage({
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {exams.map((exam) => {
             const lifecycle = String(exam.myLifecycleStatus ?? "");
             const persistedSessionStatus = String(exam.mySessionStatus ?? "");
-            const isResultAvailable =
+            const hasResultRecord =
               persistedSessionStatus === "submitted" ||
               persistedSessionStatus === "graded" ||
               persistedSessionStatus === "timed_out";
@@ -77,67 +46,62 @@ export default async function StudentExamsPage({
               lifecycle === "available" || lifecycle === "retake_available";
             const isUpcoming =
               lifecycle === "scheduled" || lifecycle === "retake_scheduled";
+            const isResultAvailable =
+              hasResultRecord && !isAvailable && !isUpcoming && !isInProgress;
             const isExcused = lifecycle === "excused";
             const isAbsent = lifecycle === "absent";
             const isTimedOut = lifecycle === "timed_out";
 
             return (
-              <Card key={exam.id} className="flex flex-col">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{exam.title}</CardTitle>
+              <Card key={exam.id} className="flex flex-col rounded-2xl">
+                <CardHeader className="space-y-3 pb-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <CardTitle className="line-clamp-2 text-base leading-6">
+                      {exam.title}
+                    </CardTitle>
                     {isResultAvailable && (
-                      <Badge variant="secondary">Өгсөн</Badge>
+                      <Badge variant="secondary" className="shrink-0">
+                        Өгсөн
+                      </Badge>
                     )}
                     {!isResultAvailable && isAvailable && (
-                      <Badge variant="secondary">
+                      <Badge variant="secondary" className="shrink-0">
                         {lifecycle === "retake_available"
                           ? "Нөхөн шалгалт"
                           : "Одоо эхэлнэ"}
                       </Badge>
                     )}
                     {!isResultAvailable && isUpcoming && (
-                      <Badge variant="outline">
-                        {lifecycle === "retake_scheduled" ? "Нөхөн товлогдсон" : "Удахгүй"}
+                      <Badge variant="outline" className="shrink-0">
+                        {lifecycle === "retake_scheduled"
+                          ? "Нөхөн товлогдсон"
+                          : "Удахгүй"}
                       </Badge>
                     )}
                     {isExcused && (
-                      <Badge variant="outline">Чөлөөлөгдсөн</Badge>
+                      <Badge variant="outline" className="shrink-0">
+                        Чөлөөлөгдсөн
+                      </Badge>
                     )}
                     {isTimedOut && (
-                      <Badge variant="outline">Хугацаа дууссан</Badge>
+                      <Badge variant="outline" className="shrink-0">
+                        Хугацаа дууссан
+                      </Badge>
                     )}
                     {isAbsent && (
-                      <Badge variant="outline">Өгөөгүй</Badge>
+                      <Badge variant="outline" className="shrink-0">
+                        Өгөөгүй
+                      </Badge>
                     )}
                   </div>
-                  {exam.description && (
-                    <CardDescription>{exam.description}</CardDescription>
-                  )}
                 </CardHeader>
-                <CardContent className="flex flex-1 flex-col justify-between gap-4">
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span>Эхлэх:</span>
-                      <span>{formatDateTimeUB(exam.start_time)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Дуусах:</span>
-                      <span>{formatDateTimeUB(exam.end_time)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Хугацаа:</span>
-                      <span>{exam.duration_minutes} минут</span>
-                    </div>
-                    {exam.passing_score && (
-                      <div className="flex justify-between">
-                        <span>Тэнцэх оноо:</span>
-                        <span>{exam.passing_score}%</span>
-                      </div>
-                    )}
+                <CardContent className="flex flex-1 flex-col justify-between gap-4 pt-0">
+                  <div className="space-y-1.5 text-sm text-muted-foreground">
+                    <p>Нээгдэнэ: {formatDateTimeUB(exam.start_time)}</p>
+                    <p>Хаагдана: {formatDateTimeUB(exam.end_time)}</p>
+                    <p>{exam.duration_minutes} минут</p>
                   </div>
 
-                  {/* Аль хэдийн өгсөн → үр дүн */}
                   {isResultAvailable && (
                     <Link href={`/student/exams/${exam.id}/result`}>
                       <Button variant="outline" className="w-full">
@@ -146,7 +110,6 @@ export default async function StudentExamsPage({
                     </Link>
                   )}
 
-                  {/* Үргэлжлүүлэх (in_progress + цаг дуусаагүй) */}
                   {!isResultAvailable && isInProgress && (
                     <Link href={`/student/exams/${exam.id}/take`}>
                       <Button variant="outline" className="w-full">
@@ -155,7 +118,6 @@ export default async function StudentExamsPage({
                     </Link>
                   )}
 
-                  {/* Шалгалт өгөх (active, session байхгүй) */}
                   {!isResultAvailable && !isInProgress && isAvailable && (
                     <Link href={`/student/exams/${exam.id}/take`}>
                       <Button className="w-full">
@@ -178,11 +140,13 @@ export default async function StudentExamsPage({
                     </Button>
                   )}
 
-                  {!isResultAvailable && !isInProgress && (isAbsent || isTimedOut) && (
-                    <Button disabled variant="outline" className="w-full">
-                      {isTimedOut ? "Хугацаа дууссан" : "Өгөөгүй"}
-                    </Button>
-                  )}
+                  {!isResultAvailable &&
+                    !isInProgress &&
+                    (isAbsent || isTimedOut) && (
+                      <Button disabled variant="outline" className="w-full">
+                        {isTimedOut ? "Хугацаа дууссан" : "Өгөөгүй"}
+                      </Button>
+                    )}
                 </CardContent>
               </Card>
             );

@@ -6,20 +6,17 @@ import { useState } from "react";
 import { logout } from "@/lib/auth/actions";
 import {
   Book,
-  CalendarDays,
   CheckSquare,
   ChevronLeft,
-  FilePlusCorner,
   FileSpreadsheet,
   HomeIcon,
   LogOut,
   LucideIcon,
-  Plus,
-  UserCircle2,
   Users,
 } from "lucide-react";
 import Logo from "@/app/_icons/Logo";
 import SideBarImage from "@/app/_icons/SideBarImage";
+import NotificationBell from "@/components/NotificationBell";
 
 interface NavItem {
   href: string;
@@ -34,12 +31,6 @@ const ALL_NAV_ITEMS: NavItem[] = [
     label: "Асуултын сан",
     icon: Book,
   },
-  { href: "/educator/new-question", label: "Шинэ асуулт", icon: Plus },
-  {
-    href: "/educator/create-exam",
-    label: "Шалгалт үүсгэх",
-    icon: FilePlusCorner,
-  },
   {
     href: "/educator/exams",
     label: "Шалгалтууд",
@@ -47,8 +38,6 @@ const ALL_NAV_ITEMS: NavItem[] = [
   },
   { href: "/educator/groups", label: "Бүлгүүд", icon: Users },
   { href: "/educator/grading", label: "Дүн шалгах", icon: CheckSquare },
-  { href: "/educator/schedule", label: "Хуваарь", icon: CalendarDays },
-  { href: "/educator/profile", label: "Профайл", icon: UserCircle2 },
 ];
 
 export default function Sidebar() {
@@ -112,6 +101,7 @@ export default function Sidebar() {
                 </Link>
               );
             })}
+            <NotificationBell variant="sidebar" isCollapsed={isCollapsed} />
           </nav>
         </div>
 

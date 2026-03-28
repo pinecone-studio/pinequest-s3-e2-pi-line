@@ -5,14 +5,12 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { logout } from "@/lib/auth/actions";
 import {
-  CalendarDays,
   ChevronLeft,
   FileText,
   HomeIcon,
   ListCheck,
   LogOut,
   LucideIcon,
-  UserCircle2,
 } from "lucide-react";
 import Logo from "@/app/_icons/Logo";
 import Tsunh from "@/app/_icons/Tsunh";
@@ -25,10 +23,8 @@ interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/student", label: "Нүүр хуудас", icon: HomeIcon },
-  { href: "/student/exams", label: "Шалгалтууд", icon: FileText },
-  { href: "/student/schedule", label: "Миний хуваарь", icon: CalendarDays },
-  { href: "/student/results", label: "Миний дүн", icon: ListCheck },
-  { href: "/student/profile", label: "Профайл", icon: UserCircle2 },
+
+  { href: "/student/results", label: "Миний шалгалтууд", icon: ListCheck },
 ];
 
 export default function Sidebar() {

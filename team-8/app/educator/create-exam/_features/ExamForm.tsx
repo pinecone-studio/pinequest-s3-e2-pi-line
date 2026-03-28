@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { parseUlaanbaatarDateTime } from "@/lib/utils/date";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -302,6 +303,10 @@ export default function ExamForm({
   const [descriptionValue, setDescriptionValue] = useState(initialDescription);
   const isFinalStep = currentStep === steps.length - 1;
 
+  useEffect(() => {
+    setError(initialError);
+  }, [initialError]);
+
   function getGroupsForSubject(nextSubjectId: string) {
     if (nextSubjectId === "__none") return [];
     return groups.filter(
@@ -362,8 +367,8 @@ export default function ExamForm({
         return false;
       }
 
-      const startMs = new Date(`${startTime}+08:00`).getTime();
-      const endMs = new Date(`${endTime}+08:00`).getTime();
+      const startMs = parseUlaanbaatarDateTime(startTime)?.getTime() ?? Number.NaN;
+      const endMs = parseUlaanbaatarDateTime(endTime)?.getTime() ?? Number.NaN;
 
       if (Number.isNaN(startMs) || Number.isNaN(endMs) || startMs >= endMs) {
         setError("Хаагдах хугацаа нээгдэх хугацаанаас хойш байх ёстой.");
