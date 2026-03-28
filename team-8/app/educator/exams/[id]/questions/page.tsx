@@ -15,11 +15,10 @@ interface Props {
 
 export default async function ExamQuestionsPage({ params }: Props) {
   const { id } = await params;
-  const [exam, questions, passages, aiContext] = await Promise.all([
+  const [exam, questions, passages] = await Promise.all([
     getExamById(id),
     getQuestionsByExam(id),
     getQuestionPassagesByExam(id),
-    getSampleExamContext(id),
   ]);
 
   if (!exam) notFound();
