@@ -344,6 +344,7 @@ export function ExamScheduleSection({
   const [durationMinutes, setDurationMinutes] = useState(
     initialDurationMinutes ? String(initialDurationMinutes) : ""
   );
+  const hasCustomDuration = durationMinutes.trim().length > 0;
 
   const startTime = joinDateTime(startDate, startClock);
   const endTime = joinDateTime(endDate, endClock);
@@ -439,11 +440,16 @@ export function ExamScheduleSection({
               value={durationMinutes}
               onChange={(event) => setDurationMinutes(event.target.value)}
               placeholder="Минут оруулах"
-              className="h-10 w-32 rounded-2xl border-zinc-200 px-3 pr-12 text-center text-sm focus-visible:ring-zinc-200"
+              className={cn(
+                "h-10 w-36 rounded-2xl border-zinc-200 px-3 text-center text-sm focus-visible:ring-zinc-200",
+                hasCustomDuration ? "pr-12" : "pr-3"
+              )}
             />
-            <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
-              мин
-            </span>
+            {hasCustomDuration ? (
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+                мин
+              </span>
+            ) : null}
           </div>
         </div>
 
