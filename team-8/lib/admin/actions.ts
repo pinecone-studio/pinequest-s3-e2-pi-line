@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-// ── Dashboard stats ──────────────────────────────────────────────────────────
 
 export async function getAdminStats() {
   const supabase = await createClient();
