@@ -16,6 +16,7 @@ export type NotificationType =
   | "general";
 
 type EmailDeliveryType =
+  | "new_exam_assigned_student"
   | "exam_graded_student"
   | "exam_graded_parent"
   | "exam_reminder_1day_student"
@@ -107,6 +108,13 @@ type NotificationRow = {
   dedupe_key?: string | null;
 };
 
+type NotificationWriteResult = {
+  insertedRows: NotificationRow[];
+};
+
+const EMAIL_DELIVERY_BATCH_SIZE = 4;
+const EMAIL_DELIVERY_BATCH_DELAY_MS = 250;
+
 function getAppBaseUrl() {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (explicit) {
@@ -143,6 +151,10 @@ function buildDedupeKey(...parts: Array<string | number | null | undefined>) {
     .filter((part) => part !== null && part !== undefined && String(part).trim() !== "")
     .map((part) => String(part).trim())
     .join(":");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatDurationMinutes(durationMinutes: number) {
@@ -226,6 +238,50 @@ function buildReminderContent(
     buildExamInfoLine(candidate),
     `Шалгалт руу орох холбоос: ${link}`,
   ].join("\n\n");
+
+  return { subject, html, text };
+}
+
+function buildNewExamAssignedContent(params: {
+  studentName: string;
+  examTitle: string;
+  startTime?: string | null;
+  durationMinutes?: number | null;
+  link: string;
+}) {
+  const hasSchedule = Boolean(params.startTime);
+  const title = "Шинэ шалгалт танд оноогдлоо";
+  const intro = hasSchedule
+    ? `"${params.examTitle}" шалгалт танд оноогдлоо. Хугацаагаа урьдчилж шалгаарай.`
+    : `"${params.examTitle}" шалгалт танд оноогдлоо.`;
+  const subject = `Шинэ шалгалт: ${params.examTitle}`;
+
+  const sections = [
+    `<strong>Шалгалт</strong><br />${escapeHtml(params.examTitle)}`,
+    hasSchedule
+      ? `<strong>Эхлэх цаг</strong><br />${escapeHtml(formatDateTimeUB(String(params.startTime)))}`
+      : "",
+    params.durationMinutes
+      ? `<strong>Үргэлжлэх хугацаа</strong><br />${escapeHtml(
+          formatDurationMinutes(Number(params.durationMinutes))
+        )}`
+      : "",
+    `<strong>Шалгалтын жагсаалт</strong><br /><a href="${escapeHtml(params.link)}" style="color:#2563eb;">${escapeHtml(params.link)}</a>`,
+  ].filter(Boolean);
+
+  const html = buildEmailHtml(title, intro, sections);
+  const text = [
+    title,
+    intro,
+    `Шалгалт: ${params.examTitle}`,
+    params.startTime ? `Эхлэх цаг: ${formatDateTimeUB(String(params.startTime))}` : "",
+    params.durationMinutes
+      ? `Үргэлжлэх хугацаа: ${formatDurationMinutes(Number(params.durationMinutes))}`
+      : "",
+    `Шалгалтын жагсаалт: ${params.link}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   return { subject, html, text };
 }
@@ -427,21 +483,57 @@ function toNotificationRow(params: NotificationInsertParams): NotificationRow {
   };
 }
 
-async function writeNotificationRows(rows: NotificationRow[]) {
-  if (rows.length === 0) return;
+async function writeNotificationRows(rows: NotificationRow[]): Promise<NotificationWriteResult> {
+  if (rows.length === 0) {
+    return { insertedRows: [] };
+  }
 
   const admin = createAdminClient();
-  const keyedRows = rows.filter((row) => row.dedupe_key);
+  const keyedRows = Array.from(
+    new Map(
+      rows
+        .filter((row): row is NotificationRow & { dedupe_key: string } => Boolean(row.dedupe_key))
+        .map((row) => [String(row.dedupe_key), row])
+    ).values()
+  );
   const unkeyedRows = rows.filter((row) => !row.dedupe_key);
+  const insertedRows: NotificationRow[] = [];
 
   if (keyedRows.length > 0) {
-    const { error } = await admin.from("notifications").upsert(keyedRows, {
-      onConflict: "dedupe_key",
-      ignoreDuplicates: true,
-    });
+    const dedupeKeys = keyedRows.map((row) => String(row.dedupe_key));
+    const { data: existingRows, error: existingError } = await admin
+      .from("notifications")
+      .select("dedupe_key")
+      .in("dedupe_key", dedupeKeys);
 
-    if (error) {
-      console.error("Failed to upsert notifications:", error.message);
+    if (existingError) {
+      console.error("Failed to load existing notifications:", existingError.message);
+      const { error } = await admin.from("notifications").insert(keyedRows);
+      if (error) {
+        console.error("Failed to insert keyed notifications:", error.message);
+      } else {
+        insertedRows.push(...keyedRows);
+      }
+    } else {
+      const existingKeys = new Set(
+        (existingRows ?? [])
+          .map((row) => row.dedupe_key)
+          .filter((value): value is string => typeof value === "string" && value.length > 0)
+      );
+
+      const missingRows = keyedRows.filter(
+        (row) => !existingKeys.has(String(row.dedupe_key))
+      );
+
+      if (missingRows.length > 0) {
+        const { error } = await admin.from("notifications").insert(missingRows);
+
+        if (error) {
+          console.error("Failed to insert keyed notifications:", error.message);
+        } else {
+          insertedRows.push(...missingRows);
+        }
+      }
     }
   }
 
@@ -450,8 +542,12 @@ async function writeNotificationRows(rows: NotificationRow[]) {
 
     if (error) {
       console.error("Failed to insert notifications:", error.message);
+    } else {
+      insertedRows.push(...unkeyedRows);
     }
   }
+
+  return { insertedRows };
 }
 
 async function claimEmailDelivery(
@@ -775,13 +871,13 @@ export async function markAllAsRead() {
 // ─── Create (internal helpers, called from other server actions) ─────
 
 export async function createNotification(params: NotificationInsertParams) {
-  await writeNotificationRows([toNotificationRow(params)]);
+  return writeNotificationRows([toNotificationRow(params)]);
 }
 
 export async function createBulkNotifications(
   notifications: NotificationInsertParams[]
 ) {
-  await writeNotificationRows(notifications.map(toNotificationRow));
+  return writeNotificationRows(notifications.map(toNotificationRow));
 }
 
 // ─── Notification Triggers ───────────────────────────────────────────
@@ -866,13 +962,15 @@ export async function notifyStudentOfGrading(
   }
 }
 
-/** Шинэ шалгалт оноогдсон → Сурагчдад in-app notification */
+/** Шинэ шалгалт оноогдсон → Сурагчдад in-app notification + email */
 export async function notifyStudentsOfNewExam(
   examId: string,
   examTitle: string,
   studentIds: string[],
   details?: { startTime?: string | null; durationMinutes?: number | null }
 ) {
+  if (studentIds.length === 0) return;
+
   const extraMessage =
     details?.startTime && details?.durationMinutes
       ? ` Эхлэх цаг: ${formatDateTimeUB(details.startTime)}. Үргэлжлэх хугацаа: ${formatDurationMinutes(
@@ -894,7 +992,65 @@ export async function notifyStudentsOfNewExam(
     dedupeKey: buildDedupeKey("new_exam_assigned", examId, studentId),
   }));
 
-  await createBulkNotifications(notifications);
+  const notificationResult = await createBulkNotifications(notifications);
+  const newlyNotifiedStudentIds = Array.from(
+    new Set(notificationResult.insertedRows.map((row) => String(row.user_id)))
+  );
+
+  if (newlyNotifiedStudentIds.length === 0) {
+    return;
+  }
+
+  const admin = createAdminClient();
+  const { data: profiles, error: profileError } = await admin
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", newlyNotifiedStudentIds);
+
+  if (profileError || !profiles || profiles.length === 0) {
+    if (profileError) {
+      console.error("Failed to load students for new exam email:", profileError.message);
+    }
+    return;
+  }
+
+  const link = toAbsoluteUrl("/student/exams");
+
+  for (let index = 0; index < profiles.length; index += EMAIL_DELIVERY_BATCH_SIZE) {
+    const batch = profiles.slice(index, index + EMAIL_DELIVERY_BATCH_SIZE);
+
+    await Promise.all(
+      batch.map(async (profile) => {
+        if (!profile.email) return;
+
+        const content = buildNewExamAssignedContent({
+          studentName: profile.full_name ?? "Сурагч",
+          examTitle,
+          startTime: details?.startTime ?? null,
+          durationMinutes: details?.durationMinutes ?? null,
+          link,
+        });
+
+        const result = await sendEmailMessage({
+          to: profile.email,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+        });
+
+        if (!result.success) {
+          console.error(
+            `Failed to send new exam email to student ${profile.id}:`,
+            result.error
+          );
+        }
+      })
+    );
+
+    if (index + EMAIL_DELIVERY_BATCH_SIZE < profiles.length) {
+      await sleep(EMAIL_DELIVERY_BATCH_DELAY_MS);
+    }
+  }
 }
 
 /** Шалгалтын дүн гарсан → Эцэг эхэд email-ээр мэдэгдэх */
@@ -1011,9 +1167,12 @@ export async function sendExamReminderNotifications(
   let parentEmailsAttempted = 0;
   let parentEmailsSent = 0;
 
-  const batchSize = 10;
-  for (let index = 0; index < candidates.length; index += batchSize) {
-    const batch = candidates.slice(index, index + batchSize);
+  for (
+    let index = 0;
+    index < candidates.length;
+    index += EMAIL_DELIVERY_BATCH_SIZE
+  ) {
+    const batch = candidates.slice(index, index + EMAIL_DELIVERY_BATCH_SIZE);
     const batchResults = await Promise.all(
       batch.map((candidate) => deliverReminderEmails(candidate, reminderType))
     );
@@ -1023,6 +1182,10 @@ export async function sendExamReminderNotifications(
       studentEmailsSent += result.studentEmailsSent;
       parentEmailsAttempted += result.parentEmailsAttempted;
       parentEmailsSent += result.parentEmailsSent;
+    }
+
+    if (index + EMAIL_DELIVERY_BATCH_SIZE < candidates.length) {
+      await sleep(EMAIL_DELIVERY_BATCH_DELAY_MS);
     }
   }
 

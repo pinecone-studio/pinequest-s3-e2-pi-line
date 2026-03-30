@@ -474,15 +474,22 @@ export async function publishExam(examId: string) {
 
   if (recipients && recipients.length > 0) {
     const studentIds = recipients.map((r) => r.student_id);
-    notifyStudentsOfNewExam(
-      examId,
-      snapshot.exam.title,
-      studentIds,
-      {
-        startTime: snapshot.exam.start_time,
-        durationMinutes: snapshot.exam.duration_minutes,
-      }
-    ).catch(() => {});
+    try {
+      await notifyStudentsOfNewExam(
+        examId,
+        snapshot.exam.title,
+        studentIds,
+        {
+          startTime: snapshot.exam.start_time,
+          durationMinutes: snapshot.exam.duration_minutes,
+        }
+      );
+    } catch (notificationError) {
+      console.error(
+        `Failed to notify students after publishing exam ${examId}:`,
+        notificationError
+      );
+    }
   }
 
   revalidatePath("/educator");
