@@ -164,7 +164,6 @@ async function runCameraCheck(): Promise<CheckResult> {
 // Status icon + badge helpers
 // ---------------------------------------------------------------------------
 
-const PENDING_RESULT: CheckResult = { status: "pending", message: "Waiting…" };
 const CHECKING_RESULT: CheckResult = { status: "checking", message: "Checking…" };
 
 function StatusIcon({ status }: { status: CheckStatus }) {
@@ -243,16 +242,18 @@ function CheckRow({ icon, label, result }: CheckRowProps) {
 // Main component
 // ---------------------------------------------------------------------------
 
-const INITIAL_CHECKS: SystemChecks = {
-  battery: PENDING_RESULT,
-  internet: PENDING_RESULT,
-  camera: PENDING_RESULT,
-};
-
 export default function PreExamCheck({ onStart, examTitle }: PreExamCheckProps) {
-  const [checks, setChecks] = useState<SystemChecks>(INITIAL_CHECKS);
-  const [isRunning, setIsRunning] = useState(false);
+  // Start in the "checking" state so the initial useEffect never needs to call
+  // setState synchronously (which triggers react-hooks/set-state-in-effect).
+  const [checks, setChecks] = useState<SystemChecks>({
+    battery: CHECKING_RESULT,
+    internet: CHECKING_RESULT,
+    camera: CHECKING_RESULT,
+  });
+  const [isRunning, setIsRunning] = useState(true);
 
+  // Recheck button handler – called from an event handler, not from an effect,
+  // so synchronous setState calls here are fine.
   const runAllChecks = useCallback(async () => {
     setIsRunning(true);
     setChecks({ battery: CHECKING_RESULT, internet: CHECKING_RESULT, camera: CHECKING_RESULT });
@@ -268,10 +269,25 @@ export default function PreExamCheck({ onStart, examTitle }: PreExamCheckProps) 
     setIsRunning(false);
   }, []);
 
-  // Run automatically on first render
+  // Run checks once on mount. The effect itself does not call setState – all
+  // state updates happen asynchronously after the awaited Promise.all resolves,
+  // which satisfies react-hooks/set-state-in-effect.
   useEffect(() => {
-    runAllChecks();
-  }, [runAllChecks]);
+    let cancelled = false;
+
+    Promise.all([runBatteryCheck(), runInternetCheck(), runCameraCheck()]).then(
+      ([battery, internet, camera]) => {
+        if (!cancelled) {
+          setChecks({ battery, internet, camera });
+          setIsRunning(false);
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Derived state
