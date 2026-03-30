@@ -69,9 +69,16 @@ type ExamRecipientWindowRow = {
     | null;
 };
 
+const DIGEST_EMAIL_BATCH_SIZE = 4;
+const DIGEST_EMAIL_BATCH_DELAY_MS = 250;
+
 function getRelationObject<T>(value: T | T[] | null | undefined) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getPeriodStartStamp(now: Date) {
@@ -433,9 +440,8 @@ export async function GET(request: Request) {
       };
     });
 
-    const batchSize = 10;
-    for (let index = 0; index < digests.length; index += batchSize) {
-      const batch = digests.slice(index, index + batchSize);
+    for (let index = 0; index < digests.length; index += DIGEST_EMAIL_BATCH_SIZE) {
+      const batch = digests.slice(index, index + DIGEST_EMAIL_BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (digest) => {
           digestsAttempted += 1;
@@ -447,6 +453,10 @@ export async function GET(request: Request) {
         if (result.success && !("skipped" in result && result.skipped)) {
           digestsSent += 1;
         }
+      }
+
+      if (index + DIGEST_EMAIL_BATCH_SIZE < digests.length) {
+        await sleep(DIGEST_EMAIL_BATCH_DELAY_MS);
       }
     }
 

@@ -275,16 +275,31 @@ ALTER TABLE public.email_deliveries ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view all profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Users can view permitted profiles" ON public.profiles;
 
+CREATE OR REPLACE FUNCTION public.auth_is_teacher_or_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.profiles
+    WHERE id = auth.uid()
+      AND role IN ('teacher', 'admin')
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.auth_is_teacher_or_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.auth_is_teacher_or_admin() FROM anon;
+GRANT EXECUTE ON FUNCTION public.auth_is_teacher_or_admin() TO authenticated;
+
 CREATE POLICY "Users can view permitted profiles"
   ON public.profiles
   FOR SELECT
   USING (
-    auth.uid() = id OR EXISTS (
-      SELECT 1
-      FROM public.profiles viewer
-      WHERE viewer.id = auth.uid()
-        AND viewer.role IN ('teacher', 'admin')
-    )
+    auth.uid() = id
+    OR public.auth_is_teacher_or_admin()
   );
 
 SELECT 'DONE! Manual catch-up script applied successfully.' AS status;

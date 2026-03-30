@@ -15,9 +15,7 @@ import {
 } from "@/lib/exam-snapshot";
 import {
   applyStoredVariantToQuestion,
-  ensureSessionQuestionVariants,
   getSessionQuestionVariantMap,
-  isQuestionVariantSchemaMissing,
   type StoredQuestionVariant,
 } from "@/lib/question-variants";
 import {
@@ -33,8 +31,6 @@ import {
   pickLatestAttempt,
 } from "@/lib/exam-attempt-utils";
 import { attachPassagesToQuestions } from "@/lib/question-passages";
-import type { QuestionType } from "@/types";
-
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 type ProctorEventType =
   | "tab_hidden"
@@ -123,21 +119,6 @@ export type StudentSafeQuestion = {
   points: number;
   order_index: number;
   question_passages?: StudentQuestionPassage | null;
-};
-
-type SessionQuestionSource = {
-  id: string;
-  passage_id?: string | null;
-  type: QuestionType;
-  content: string;
-  content_html: string | null;
-  image_url: string | null;
-  options: string[] | null;
-  correct_answer: string | null;
-  points: number;
-  order_index: number;
-  explanation: string | null;
-  ai_variant_enabled: boolean;
 };
 
 type PrepareExamTakePayloadResult =
@@ -455,100 +436,6 @@ async function loadStudentExamPayload(
   await redis.set(cacheKey, JSON.stringify(cachePayload), { ex: ttlSeconds });
 
   return result;
-}
-
-async function getExamQuestionSources(
-  supabase: SupabaseServerClient,
-  examId: string
-) {
-  const snapshot = await getStoredPublishedExamSnapshot(supabase, examId);
-
-  if (snapshot) {
-    return snapshot.questions.map(
-      (question) =>
-        ({
-          id: question.id,
-          passage_id: question.passage_id ?? null,
-          type: question.type,
-          content: question.content,
-          content_html: question.content_html ?? null,
-          image_url: question.image_url ?? null,
-          options: Array.isArray(question.options) ? question.options : null,
-          correct_answer: question.correct_answer ?? null,
-          points: Number(question.points ?? 0),
-          order_index: Number(question.order_index ?? 0),
-          explanation: question.explanation ?? null,
-          ai_variant_enabled: Boolean(question.ai_variant_enabled),
-        }) satisfies SessionQuestionSource
-    );
-  }
-
-  const baseSelect =
-    "id, passage_id, type, content, content_html, image_url, options, correct_answer, points, order_index, explanation";
-  const selectWithVariant = `${baseSelect}, ai_variant_enabled`;
-
-  const { data, error } = await supabase
-    .from("questions")
-    .select(selectWithVariant)
-    .eq("exam_id", examId)
-    .order("order_index", { ascending: true });
-
-  if (error) {
-    if (!isQuestionVariantSchemaMissing(error.code, error.message)) {
-      throw new Error(error.message);
-    }
-
-    const fallback = await supabase
-      .from("questions")
-      .select(baseSelect)
-      .eq("exam_id", examId)
-      .order("order_index", { ascending: true });
-
-    if (fallback.error) {
-      throw new Error(fallback.error.message);
-    }
-
-    return (fallback.data ?? []).map(
-      (question) =>
-        ({
-          id: String(question.id),
-          passage_id:
-            question.passage_id === undefined ? null : question.passage_id,
-          type: String(question.type) as QuestionType,
-          content: String(question.content ?? ""),
-          content_html: (question.content_html as string | null) ?? null,
-          image_url: (question.image_url as string | null) ?? null,
-          options: Array.isArray(question.options)
-            ? (question.options as string[])
-            : null,
-          correct_answer: (question.correct_answer as string | null) ?? null,
-          points: Number(question.points ?? 0),
-          order_index: Number(question.order_index ?? 0),
-          explanation: (question.explanation as string | null) ?? null,
-          ai_variant_enabled: false,
-        }) satisfies SessionQuestionSource
-    );
-  }
-
-  return (data ?? []).map(
-    (question) =>
-      ({
-        id: String(question.id),
-        passage_id: question.passage_id === undefined ? null : question.passage_id,
-        type: String(question.type) as QuestionType,
-        content: String(question.content ?? ""),
-        content_html: (question.content_html as string | null) ?? null,
-        image_url: (question.image_url as string | null) ?? null,
-        options: Array.isArray(question.options)
-          ? (question.options as string[])
-          : null,
-        correct_answer: (question.correct_answer as string | null) ?? null,
-        points: Number(question.points ?? 0),
-        order_index: Number(question.order_index ?? 0),
-        explanation: (question.explanation as string | null) ?? null,
-        ai_variant_enabled: Boolean(question.ai_variant_enabled),
-      }) satisfies SessionQuestionSource
-  );
 }
 
 function applyVariantToStudentSafeQuestion(
@@ -1644,12 +1531,10 @@ export async function prepareExamTakePayload(
     return { redirectTo: `/student/exams/${examId}/result` } as const;
   }
 
-  const baseQuestions = await getExamQuestionSources(supabase, examId);
-  const questionVariantMap = await ensureSessionQuestionVariants(supabase, {
-    sessionId: session.id,
-    userId: user.id,
-    questions: baseQuestions,
-  });
+  const questionVariantMap = await getSessionQuestionVariantMap(
+    supabase,
+    session.id
+  );
   const displayQuestions = examPayload.questions.map((question) =>
     applyVariantToStudentSafeQuestion(
       question,
