@@ -70,8 +70,8 @@ export default function Sidebar() {
                   href={item.href}
                   className={`group flex items-center rounded-[12px] px-4 py-2 text-[15px] font-semibold transition-all duration-200 ${
                     isActive
-                      ? "border-2 border-[#4078C1] bg-[#ECF1F9] text-[#4078C1] shadow-sm"
-                      : "text-[#7F7F7F] hover:bg-[#F4F6FA] hover:text-[#4078C1]"
+                      ? "border-2 border-[#d0b1fd] bg-[#ede1fe] text-[#7e32f5] shadow-sm"
+                      : "text-[#7F7F7F] hover:bg-[#F4F6FA] hover:text-[#7e32f5]"
                   } ${isCollapsed ? "justify-center gap-0 px-3" : "gap-4"}`}
                 >
                   <Icon
@@ -79,8 +79,8 @@ export default function Sidebar() {
                     strokeWidth={isActive ? 2.5 : 2}
                     className={
                       isActive
-                        ? "text-[#4078C1]"
-                        : "text-[#575555] group-hover:text-[#4078C1]"
+                        ? "text-[#7e32f5]"
+                        : "text-[#575555] group-hover:text-[#7e32f5]"
                     }
                   />
                   {!isCollapsed && <span>{item.label}</span>}

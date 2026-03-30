@@ -10,12 +10,26 @@ import { getStudentStats } from "@/lib/dashboard/actions";
 import { formatDateTimeUB } from "@/lib/utils/date";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import DashboardImage from "../_icons/DashboardImage";
 
 export default async function StudentDashboard() {
   const stats = await getStudentStats();
 
   return (
     <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#ffffff] via-[#ffeac0] to-[#ffd474] px-8 py-6">
+        <div className="relative z-10 max-w-2xl space-y-2">
+          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">
+            Сурагчын самбар
+          </h2>
+          <p className="text-sm text-muted-foreground md:text-base">
+            Шалгалт, дүнгийн мэдээллээ нэг доороос хянаарай.
+          </p>
+        </div>
+        <div className="pointer-events-none absolute bottom-0 right-0 hidden h-full w-auto scale-125 origin-bottom-right md:block">
+          <DashboardImage />
+        </div>
+      </div>
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Хянах самбар</h2>
         <p className="text-muted-foreground">
@@ -88,7 +102,9 @@ export default async function StudentDashboard() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <Badge variant="outline">{exam.duration_minutes} мин</Badge>
+                      <Badge variant="outline">
+                        {exam.duration_minutes} мин
+                      </Badge>
                       <Badge
                         variant={
                           exam.lifecycle_status === "available" ||
@@ -112,9 +128,7 @@ export default async function StudentDashboard() {
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div>
               <CardTitle className="text-lg">Сүүлд шинэчлэгдсэн дүн</CardTitle>
-              <CardDescription>
-                Саяхан өгсөн шалгалтуудын төлөв
-              </CardDescription>
+              <CardDescription>Саяхан өгсөн шалгалтуудын төлөв</CardDescription>
             </div>
             <Link href="/student/results">
               <Button variant="outline" size="sm">
@@ -146,8 +160,14 @@ export default async function StudentDashboard() {
                       {result.percentage !== null && (
                         <Badge variant="outline">{result.percentage}%</Badge>
                       )}
-                      <Badge variant={result.status === "graded" ? "secondary" : "outline"}>
-                        {result.status === "graded" ? "Дүн баталгаажсан" : "Шалгагдаж байна"}
+                      <Badge
+                        variant={
+                          result.status === "graded" ? "secondary" : "outline"
+                        }
+                      >
+                        {result.status === "graded"
+                          ? "Дүн баталгаажсан"
+                          : "Шалгагдаж байна"}
                       </Badge>
                     </div>
                   </div>
