@@ -149,7 +149,7 @@ function ExamCard({
           </div>
 
           {isActive ? (
-            <Link href={`/student/exams/${exam.id}`}>
+            <Link href={`/student/exams/${exam.id}/take`}>
               <Button
                 size="sm"
                 className="h-8 rounded-[10px] bg-[#6BBF7A] px-4 text-sm leading-[120%] font-normal text-white hover:bg-[#63b873]"
