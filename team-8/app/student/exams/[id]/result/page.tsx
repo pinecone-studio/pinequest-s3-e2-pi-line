@@ -3,7 +3,6 @@ import Link from "next/link";
 import { getExamResult } from "@/lib/student/actions";
 import { CheckCircle2, XCircle, MinusCircle, ChevronLeft } from "lucide-react";
 import QuestionStepper from "./_components/QuestionStepper";
-import { Button } from "@/components/ui/button";
 function parseStringArray(value: unknown) {
   try {
     const parsed = JSON.parse(String(value ?? "[]")) as string[];
@@ -56,7 +55,7 @@ export default async function ExamResultPage({
     data.can_view_detailed_feedback ?? true,
   );
   const answers = canViewDetailedFeedback ? (data.answers ?? []) : [];
-  const derivedAnswers = answers.map((answer) => {
+  const derivedAnswers: Record<string, unknown>[] = answers.map((answer) => {
     const question = Array.isArray(answer.questions)
       ? answer.questions[0]
       : answer.questions;
@@ -184,7 +183,7 @@ export default async function ExamResultPage({
             <div className="flex gap-15  ">
               <div className="flex flex-col">
                 <QuestionStepper
-                  answers={derivedAnswers as any[]}
+                  answers={derivedAnswers}
                   canViewDetailedFeedback={canViewDetailedFeedback}
                   isFinalized={isFinalized}
                 />
@@ -217,8 +216,7 @@ export default async function ExamResultPage({
               </div>
               {canViewDetailedFeedback && derivedAnswers.length > 0 && (
                 <div className="space-y-3">
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {(derivedAnswers as any[]).map((ans, idx: number) => {
+                  {derivedAnswers.map((ans, idx: number) => {
                     const q = Array.isArray(ans.questions)
                       ? ans.questions[0]
                       : ans.questions;
@@ -227,10 +225,10 @@ export default async function ExamResultPage({
                     const isEssay: boolean = q.type === "essay";
                     const isCorrect: boolean | null =
                       ans.derivedIsCorrect ?? ans.is_correct ?? null;
-                    const score: number = Number(
-                      ans.derivedScore ?? ans.score ?? 0,
-                    );
-                    const points: number = Number(q.points ?? 0);
+                    // derived score and points exist on the answer/question
+                    // but they're not needed in this compact list view right now.
+                    // If needed later, use: Number(ans.derivedScore ?? ans.score ?? 0)
+                    // and Number(q.points ?? 0)
 
                     return (
                       <div

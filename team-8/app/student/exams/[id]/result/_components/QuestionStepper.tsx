@@ -243,7 +243,7 @@ function renderCorrectAnswer(question: Record<string, unknown>) {
 }
 
 interface QuestionStepperProps {
-  answers: any[];
+  answers: unknown[];
   canViewDetailedFeedback: boolean;
   isFinalized: boolean;
 }
