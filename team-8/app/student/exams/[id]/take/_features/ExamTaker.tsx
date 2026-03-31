@@ -70,26 +70,24 @@ function getShuffleWeight(seed: string, questionId: string) {
 function getDisplayQuestions(
   questions: QuestionItem[],
   shouldShuffle: boolean,
-  seed: string
+  seed: string,
 ) {
   if (!shouldShuffle) return questions;
 
   return [...questions].sort(
-    (a, b) =>
-      getShuffleWeight(seed, a.id) - getShuffleWeight(seed, b.id)
+    (a, b) => getShuffleWeight(seed, a.id) - getShuffleWeight(seed, b.id),
   );
 }
 
 function getDisplayOptions(
   options: string[],
   shouldShuffle: boolean,
-  seed: string
+  seed: string,
 ) {
   if (!shouldShuffle) return options;
 
   return [...options].sort(
-    (a, b) =>
-      getShuffleWeight(seed, a) - getShuffleWeight(seed, b)
+    (a, b) => getShuffleWeight(seed, a) - getShuffleWeight(seed, b),
   );
 }
 
@@ -98,9 +96,7 @@ function parseStoredArray(value: string | undefined) {
 
   try {
     const parsed = JSON.parse(value) as string[];
-    return Array.isArray(parsed)
-      ? parsed.map((item) => String(item))
-      : [];
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
   } catch {
     return [];
   }
@@ -113,9 +109,7 @@ function parseMatchingOptions(options: string[] | null | undefined) {
       if (!left || !right) return null;
       return { left, right };
     })
-    .filter(
-      (item): item is { left: string; right: string } => Boolean(item)
-    );
+    .filter((item): item is { left: string; right: string } => Boolean(item));
 }
 
 function normalizeDraftAnswer(questionType: string, answer: string) {
@@ -136,7 +130,7 @@ function normalizeDraftAnswer(questionType: string, answer: string) {
     try {
       const parsed = JSON.parse(answer) as Record<string, string>;
       const filteredEntries = Object.entries(parsed).filter(
-        ([, value]) => String(value ?? "").trim() !== ""
+        ([, value]) => String(value ?? "").trim() !== "",
       );
 
       return filteredEntries.length > 0
@@ -150,7 +144,10 @@ function normalizeDraftAnswer(questionType: string, answer: string) {
   return answer.trim() ? answer : null;
 }
 
-function isQuestionAnswered(question: QuestionItem, answer: string | undefined) {
+function isQuestionAnswered(
+  question: QuestionItem,
+  answer: string | undefined,
+) {
   return normalizeDraftAnswer(question.type, answer ?? "") !== null;
 }
 
@@ -164,11 +161,7 @@ export default function ExamTaker({
   const router = useRouter();
   const draftStorageKey = `exam-session:${sessionId}:drafts`;
   const [displayQuestions] = useState(() =>
-    getDisplayQuestions(
-      questions,
-      true,
-      sessionId
-    )
+    getDisplayQuestions(questions, true, sessionId),
   );
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -194,7 +187,7 @@ export default function ExamTaker({
   const lastCheckpointRef = useRef<Record<string, string>>(savedAnswers);
   const isCheckpointingRef = useRef(false);
   const currentQuestionRef = useRef<QuestionItem | null>(
-    displayQuestions[0] ?? null
+    displayQuestions[0] ?? null,
   );
   const currentIndexRef = useRef(0);
   const tabSwitchCountRef = useRef(0);
@@ -235,7 +228,7 @@ export default function ExamTaker({
     currentQuestion.matching_choices ??
       parseMatchingOptions(currentQuestion.options).map((pair) => pair.right),
     Boolean(exam.shuffle_options),
-    `${sessionId}:${currentQuestion.id}:matching-right`
+    `${sessionId}:${currentQuestion.id}:matching-right`,
   );
   const currentMatchingAnswer = (() => {
     try {
@@ -269,7 +262,7 @@ export default function ExamTaker({
         | "paste_attempt"
         | "context_menu",
       metadata: Record<string, string | number | boolean | null> = {},
-      throttleMs = 0
+      throttleMs = 0,
     ) => {
       if (isSubmittingRef.current) return;
 
@@ -285,7 +278,7 @@ export default function ExamTaker({
         ...metadata,
       });
     },
-    [sessionId]
+    [sessionId],
   );
 
   const checkpointDirtyAnswers = useCallback(async () => {
@@ -344,13 +337,7 @@ export default function ExamTaker({
       setIsSubmitting(false);
       alert(("error" in result && result.error) || "Алдаа гарлаа");
     }
-  }, [
-    draftStorageKey,
-    exam.id,
-    flushPendingAnswers,
-    router,
-    sessionId,
-  ]);
+  }, [draftStorageKey, exam.id, flushPendingAnswers, router, sessionId]);
 
   // Timer
   useEffect(() => {
@@ -412,14 +399,14 @@ export default function ExamTaker({
             tab_switch_count: newCount,
             visibility_state: document.visibilityState,
           },
-          500
+          500,
         );
 
         if (newCount >= 10) {
           void handleSubmit();
         } else if (newCount >= 5) {
           alert(
-            `Анхааруулга: Та ${newCount} удаа цонхноос гарлаа. 10 удаа давбал шалгалт автоматаар дуусна!`
+            `Анхааруулга: Та ${newCount} удаа цонхноос гарлаа. 10 удаа давбал шалгалт автоматаар дуусна!`,
           );
         }
       }
@@ -433,7 +420,7 @@ export default function ExamTaker({
         {
           tab_switch_count: tabSwitchCountRef.current,
         },
-        2000
+        2000,
       );
     };
 
@@ -493,7 +480,7 @@ export default function ExamTaker({
       answersRef.current = nextAnswers;
       setAnswers(nextAnswers);
     },
-    []
+    [],
   );
 
   // Хугацааг формат хийх
@@ -504,7 +491,7 @@ export default function ExamTaker({
   };
 
   const answeredCount = displayQuestions.filter((question) =>
-    isQuestionAnswered(question, answers[question.id])
+    isQuestionAnswered(question, answers[question.id]),
   ).length;
   const isTimeWarning = timeLeft < 300; // 5 минутаас бага
 
@@ -520,9 +507,7 @@ export default function ExamTaker({
               Энэ шалгалтыг зөвхөн Safe Exam Browser (SEB) ашиглан нээх
               боломжтой. Та SEB татаж аваад дахин нээнэ үү.
             </p>
-            <p className="text-xs text-muted-foreground">
-              safeexambrowser.org
-            </p>
+            <p className="text-xs text-muted-foreground">safeexambrowser.org</p>
           </CardContent>
         </Card>
       </div>
@@ -538,10 +523,14 @@ export default function ExamTaker({
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Энэ шалгалтын асуултын багц бүрэн бэлдээгүй байна. Багшдаа мэдэгдээд
-              дараа дахин оролдоно уу.
+              Энэ шалгалтын асуултын багц бүрэн бэлдээгүй байна. Багшдаа
+              мэдэгдээд дараа дахин оролдоно уу.
             </p>
-            <Button variant="outline" className="w-full" onClick={() => router.push("/student/exams")}>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => router.push("/student/exams")}
+            >
               Шалгалтын жагсаалт руу буцах
             </Button>
           </CardContent>
@@ -558,10 +547,13 @@ export default function ExamTaker({
           <div className="mx-4 w-full max-w-md rounded-xl border bg-background p-6 shadow-xl">
             <h3 className="text-lg font-semibold">Шалгалт дуусгах уу?</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              {answeredCount}/{displayQuestions.length} асуултад хариулсан байна.
+              {answeredCount}/{displayQuestions.length} асуултад хариулсан
+              байна.
               {answeredCount < displayQuestions.length && (
                 <span className="font-medium text-destructive">
-                  {" "}{displayQuestions.length - answeredCount} асуулт хариулаагүй байна!
+                  {" "}
+                  {displayQuestions.length - answeredCount} асуулт хариулаагүй
+                  байна!
                 </span>
               )}
             </p>
@@ -619,9 +611,7 @@ export default function ExamTaker({
               </Badge>
             )}
             {tabSwitchCount > 0 && (
-              <Badge variant="destructive">
-                Tab {tabSwitchCount}/5
-              </Badge>
+              <Badge variant="destructive">Tab {tabSwitchCount}/5</Badge>
             )}
             <div
               className={`rounded-lg px-3 py-2 font-mono text-lg font-bold sm:text-xl ${
@@ -665,7 +655,7 @@ export default function ExamTaker({
                       isCurrent
                         ? "bg-primary text-primary-foreground"
                         : isAnswered
-                          ? "bg-green-100 text-green-800"
+                          ? "bg-[#D4EDD9] text-green-800"
                           : "bg-muted hover:bg-muted/80"
                     }`}
                   >
@@ -685,9 +675,7 @@ export default function ExamTaker({
                 <CardTitle className="text-base">
                   Асуулт {currentIndex + 1}/{displayQuestions.length}
                 </CardTitle>
-                <Badge variant="outline">
-                  {currentQuestion.points} оноо
-                </Badge>
+                <Badge variant="outline">{currentQuestion.points} оноо</Badge>
               </div>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -696,7 +684,9 @@ export default function ExamTaker({
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary">Нийтлэг өгөгдөл</Badge>
                     {currentPassage.title && (
-                      <span className="font-medium">{currentPassage.title}</span>
+                      <span className="font-medium">
+                        {currentPassage.title}
+                      </span>
                     )}
                   </div>
                   <MathContent
@@ -738,7 +728,7 @@ export default function ExamTaker({
                   {getDisplayOptions(
                     currentQuestion.options ?? [],
                     Boolean(exam.shuffle_options),
-                    `${sessionId}:${currentQuestion.id}`
+                    `${sessionId}:${currentQuestion.id}`,
                   ).map((option, i) => {
                     const optionValue =
                       typeof option === "string" ? option : String(option);
@@ -751,7 +741,7 @@ export default function ExamTaker({
                           handleAnswer(
                             currentQuestion.id,
                             optionValue,
-                            currentQuestion.type
+                            currentQuestion.type,
                           )
                         }
                         className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
@@ -784,10 +774,11 @@ export default function ExamTaker({
                   {getDisplayOptions(
                     currentQuestion.options ?? [],
                     Boolean(exam.shuffle_options),
-                    `${sessionId}:${currentQuestion.id}`
+                    `${sessionId}:${currentQuestion.id}`,
                   ).map((option, i) => {
                     const optionValue = String(option);
-                    const isSelected = currentMultipleAnswers.includes(optionValue);
+                    const isSelected =
+                      currentMultipleAnswers.includes(optionValue);
 
                     return (
                       <button
@@ -795,14 +786,14 @@ export default function ExamTaker({
                         onClick={() => {
                           const nextAnswers = isSelected
                             ? currentMultipleAnswers.filter(
-                                (item) => item !== optionValue
+                                (item) => item !== optionValue,
                               )
                             : [...currentMultipleAnswers, optionValue];
 
                           handleAnswer(
                             currentQuestion.id,
                             JSON.stringify(nextAnswers),
-                            currentQuestion.type
+                            currentQuestion.type,
                           );
                         }}
                         className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
@@ -840,7 +831,7 @@ export default function ExamTaker({
                     handleAnswer(
                       currentQuestion.id,
                       e.target.value,
-                      currentQuestion.type
+                      currentQuestion.type,
                     )
                   }
                 />
@@ -857,7 +848,7 @@ export default function ExamTaker({
                     handleAnswer(
                       currentQuestion.id,
                       e.target.value,
-                      currentQuestion.type
+                      currentQuestion.type,
                     )
                   }
                 />
@@ -889,13 +880,16 @@ export default function ExamTaker({
                             handleAnswer(
                               currentQuestion.id,
                               JSON.stringify(nextAnswer),
-                              currentQuestion.type
+                              currentQuestion.type,
                             );
                           }}
                         >
                           <option value="">Сонгоно уу</option>
                           {currentMatchingChoices.map((option) => (
-                            <option key={`${leftPrompt}-${option}`} value={option}>
+                            <option
+                              key={`${leftPrompt}-${option}`}
+                              value={option}
+                            >
                               {option}
                             </option>
                           ))}
@@ -920,7 +914,7 @@ export default function ExamTaker({
                   <Button
                     onClick={() =>
                       setCurrentIndex((p) =>
-                        Math.min(displayQuestions.length - 1, p + 1)
+                        Math.min(displayQuestions.length - 1, p + 1),
                       )
                     }
                     className="flex-1"
@@ -942,7 +936,9 @@ export default function ExamTaker({
         muted
         playsInline
         className={`fixed top-16 right-4 z-50 h-28 w-36 rounded-xl border-2 bg-black object-cover shadow-lg transition-opacity ${
-          cameraStatus === "granted" ? "opacity-100" : "opacity-0 pointer-events-none"
+          cameraStatus === "granted"
+            ? "opacity-100"
+            : "opacity-0 pointer-events-none"
         }`}
       />
     </div>
