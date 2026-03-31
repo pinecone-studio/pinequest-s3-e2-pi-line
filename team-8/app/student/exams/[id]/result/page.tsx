@@ -217,14 +217,18 @@ export default async function ExamResultPage({
               {canViewDetailedFeedback && derivedAnswers.length > 0 && (
                 <div className="space-y-3">
                   {derivedAnswers.map((ans, idx: number) => {
-                    const q = Array.isArray(ans.questions)
-                      ? ans.questions[0]
-                      : ans.questions;
+                    const maybeQuestions = (ans as Record<string, unknown>).questions;
+                    let qRaw: unknown;
+                    if (Array.isArray(maybeQuestions)) {
+                      qRaw = maybeQuestions[0];
+                    } else {
+                      qRaw = maybeQuestions;
+                    }
+                    const q = (qRaw ?? null) as Record<string, unknown> | null;
                     if (!q) return null;
 
-                    const isEssay: boolean = q.type === "essay";
-                    const isCorrect: boolean | null =
-                      ans.derivedIsCorrect ?? ans.is_correct ?? null;
+                    const isEssay: boolean = String(q.type ?? "") === "essay";
+                    const isCorrect: boolean | null = (ans.derivedIsCorrect ?? (ans as Record<string, unknown>).is_correct ?? null) as boolean | null;
                     // derived score and points exist on the answer/question
                     // but they're not needed in this compact list view right now.
                     // If needed later, use: Number(ans.derivedScore ?? ans.score ?? 0)

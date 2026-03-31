@@ -254,7 +254,7 @@ export default function QuestionStepper({
   isFinalized,
 }: QuestionStepperProps) {
   const [activeIndex, setActiveIndex] = useState(0);
-  const items = answers ?? [];
+  const items = (answers ?? []) as Record<string, unknown>[];
 
   if (!canViewDetailedFeedback || items.length === 0) {
     return null;
@@ -262,13 +262,19 @@ export default function QuestionStepper({
 
   const safeIndex = Math.min(activeIndex, items.length - 1);
   const ans = items[safeIndex];
-  const q = Array.isArray(ans.questions) ? ans.questions[0] : ans.questions;
+  const maybeQuestions = (ans as Record<string, unknown>).questions;
+  let rawQ: unknown;
+  if (Array.isArray(maybeQuestions)) {
+    rawQ = maybeQuestions[0];
+  } else {
+    rawQ = maybeQuestions;
+  }
+  const q = (rawQ ?? null) as Record<string, unknown> | null;
   if (!q) return null;
 
-  const isEssay: boolean = q.type === "essay";
-  const isCorrect: boolean | null =
-    ans.derivedIsCorrect ?? ans.is_correct ?? null;
-  const score: number = Number(ans.derivedScore ?? ans.score ?? 0);
+  const isEssay: boolean = String(q.type ?? "") === "essay";
+  const isCorrect: boolean | null = (ans.derivedIsCorrect ?? ans.is_correct ?? null) as boolean | null;
+  const score: number = Number((ans as Record<string, unknown>).derivedScore ?? (ans as Record<string, unknown>).score ?? 0);
   const points: number = Number(q.points ?? 0);
   const isChoiceList =
     q.type === "multiple_choice" || q.type === "multiple_response";
@@ -323,17 +329,17 @@ export default function QuestionStepper({
               </div>
             </div>
           )}
-          {q?.explanation && (
+          {Boolean(q?.explanation) && (
             <div className="text-xs italic text-muted-foreground">
               <MathContent text={String(q.explanation)} />
             </div>
           )}
-          {isEssay && ans.feedback && (
+          {isEssay && Boolean(ans.feedback) && (
             <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm">
               <span className="font-medium text-blue-700">
                 Багшийн тайлбар:{" "}
               </span>
-              <span>{String(ans.feedback)}</span>
+              <span>{String((ans as Record<string, unknown>).feedback)}</span>
             </div>
           )}
           {isEssay && !isFinalized && (
