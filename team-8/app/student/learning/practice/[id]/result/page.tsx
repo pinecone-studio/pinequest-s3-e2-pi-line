@@ -33,7 +33,9 @@ function parseMatchingPairs(options: unknown) {
 
 function renderAnswerValue(type: string, rawAnswer: unknown) {
   if (!rawAnswer || String(rawAnswer).trim() === "") {
-    return <span className="font-medium text-muted-foreground">Хариулаагүй</span>;
+    return (
+      <span className="font-medium text-muted-foreground">Хариулаагүй</span>
+    );
   }
 
   if (type === "multiple_response") {
@@ -58,7 +60,10 @@ function renderAnswerValue(type: string, rawAnswer: unknown) {
       return (
         <div className="space-y-1.5">
           {entries.map(([left, right]) => (
-            <div key={left} className="grid gap-1 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+            <div
+              key={left}
+              className="grid gap-1 sm:grid-cols-[1fr_auto_1fr] sm:items-center"
+            >
               <MathContent
                 text={left}
                 className="prose prose-sm max-w-none font-medium text-foreground"
@@ -85,7 +90,11 @@ function renderAnswerValue(type: string, rawAnswer: unknown) {
   );
 }
 
-function renderCorrectAnswer(type: string, correctAnswer: unknown, options: unknown) {
+function renderCorrectAnswer(
+  type: string,
+  correctAnswer: unknown,
+  options: unknown,
+) {
   if (type === "matching") {
     const pairs = parseMatchingPairs(options);
     return (
@@ -147,16 +156,26 @@ export default async function StudentPracticeResultPage({
 
   const percentage =
     data.attempt.max_score && Number(data.attempt.max_score) > 0
-      ? Math.round((Number(data.attempt.total_score ?? 0) / Number(data.attempt.max_score)) * 100)
+      ? Math.round(
+          (Number(data.attempt.total_score ?? 0) /
+            Number(data.attempt.max_score)) *
+            100,
+        )
       : 0;
-  const answerMap = new Map(data.answers.map((answer) => [answer.practice_question_id, answer]));
+  const answerMap = new Map(
+    data.answers.map((answer) => [answer.practice_question_id, answer]),
+  );
 
   return (
     <div className="space-y-6 pb-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-sm font-medium text-[#4078C1]">{data.exam.subject_name}</p>
-          <h2 className="text-2xl font-bold tracking-tight">{data.exam.title}</h2>
+          <p className="text-sm font-medium text-[#4078C1]">
+            {data.exam.subject_name}
+          </p>
+          <h2 className="text-2xl font-bold tracking-tight">
+            {data.exam.title}
+          </h2>
           <p className="text-sm text-muted-foreground">
             Энэ дүн official average болон teacher/parent report-д нөлөөлөхгүй.
           </p>
@@ -177,7 +196,8 @@ export default async function StudentPracticeResultPage({
           <div className="rounded-xl border p-4">
             <p className="text-sm text-muted-foreground">Нийт оноо</p>
             <p className="mt-2 text-2xl font-bold">
-              {Number(data.attempt.total_score ?? 0)} / {Number(data.attempt.max_score ?? 0)}
+              {Number(data.attempt.total_score ?? 0)} /{" "}
+              {Number(data.attempt.max_score ?? 0)}
             </p>
           </div>
           <div className="rounded-xl border p-4">
@@ -205,10 +225,16 @@ export default async function StudentPracticeResultPage({
             <Card key={question.id} className="rounded-2xl">
               <CardHeader className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <CardTitle className="text-base">Асуулт {index + 1}</CardTitle>
+                  <CardTitle className="text-base">
+                    Асуулт {index + 1}
+                  </CardTitle>
                   <div className="flex items-center gap-2">
-                    {question.subtopic && <Badge variant="outline">{question.subtopic}</Badge>}
-                    <Badge variant={answer?.is_correct ? "secondary" : "outline"}>
+                    {question.subtopic && (
+                      <Badge variant="outline">{question.subtopic}</Badge>
+                    )}
+                    <Badge
+                      variant={answer?.is_correct ? "secondary" : "outline"}
+                    >
                       {answer?.is_correct ? "Зөв" : "Буруу"}
                     </Badge>
                   </div>
@@ -221,16 +247,26 @@ export default async function StudentPracticeResultPage({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-xl bg-zinc-50 p-4">
-                  <p className="mb-2 text-sm font-semibold text-zinc-900">Таны хариулт</p>
+                  <p className="mb-2 text-sm font-semibold text-zinc-900">
+                    Таны хариулт
+                  </p>
                   {renderAnswerValue(question.type, answer?.answer)}
                 </div>
                 <div className="rounded-xl bg-green-50 p-4">
-                  <p className="mb-2 text-sm font-semibold text-green-800">Зөв хариулт</p>
-                  {renderCorrectAnswer(question.type, question.correct_answer, question.options)}
+                  <p className="mb-2 text-sm font-semibold text-green-800">
+                    Зөв хариулт
+                  </p>
+                  {renderCorrectAnswer(
+                    question.type,
+                    question.correct_answer,
+                    question.options,
+                  )}
                 </div>
                 {question.explanation && (
                   <div className="rounded-xl border p-4">
-                    <p className="mb-2 text-sm font-semibold text-zinc-900">Тайлбар</p>
+                    <p className="mb-2 text-sm font-semibold text-zinc-900">
+                      Тайлбар
+                    </p>
                     <MathContent
                       text={question.explanation}
                       className="prose prose-sm max-w-none text-zinc-700"

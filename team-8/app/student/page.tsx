@@ -30,7 +30,7 @@ export default async function StudentDashboard() {
       </div>
 
       {/* 2. The Image Layer - Moved OUTSIDE the overflow-hidden div */}
-      <div className="pointer-events-none absolute -bottom-0 right-0 z-[60] hidden h-full w-auto scale-105 origin-bottom-right md:block">
+      <div className="pointer-events-none absolute -top-72 right-0 z-[60] hidden h-full w-auto scale-77 origin-bottom-right md:block">
         <DashboardImage />
       </div>
       <div>
@@ -93,7 +93,9 @@ export default async function StudentDashboard() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
               <div className="space-y-3">
-                <p className="text-sm font-medium text-foreground">Сайжруулах хичээлүүд</p>
+                <p className="text-sm font-medium text-foreground">
+                  Сайжруулах хичээлүүд
+                </p>
                 {stats.learningSummary.weakSubjects.map((subject) => (
                   <div
                     key={subject.subject_id}
@@ -101,14 +103,20 @@ export default async function StudentDashboard() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold">{subject.subject_name}</p>
+                        <p className="text-sm font-semibold">
+                          {subject.subject_name}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {subject.weak_topic_count > 0
                             ? `${subject.weak_topic_count} weak topic`
                             : "Topic breakdown pending"}
                         </p>
                       </div>
-                      <Badge variant={subject.mastery_score < 60 ? "secondary" : "outline"}>
+                      <Badge
+                        variant={
+                          subject.mastery_score < 60 ? "secondary" : "outline"
+                        }
+                      >
                         {Math.round(subject.mastery_score)}%
                       </Badge>
                     </div>
@@ -117,7 +125,9 @@ export default async function StudentDashboard() {
               </div>
 
               <div className="space-y-3">
-                <p className="text-sm font-medium text-foreground">Хамгийн сул сэдвүүд</p>
+                <p className="text-sm font-medium text-foreground">
+                  Хамгийн сул сэдвүүд
+                </p>
                 {stats.learningSummary.weakTopics.length === 0 ? (
                   <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
                     Topic-level data хараахан бүрэн бэлэн болоогүй байна.
@@ -130,10 +140,18 @@ export default async function StudentDashboard() {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-sm font-semibold">{topic.topic_label}</p>
-                          <p className="text-xs text-muted-foreground">{topic.subject_name}</p>
+                          <p className="text-sm font-semibold">
+                            {topic.topic_label}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {topic.subject_name}
+                          </p>
                         </div>
-                        <Badge variant={topic.mastery_score < 60 ? "secondary" : "outline"}>
+                        <Badge
+                          variant={
+                            topic.mastery_score < 60 ? "secondary" : "outline"
+                          }
+                        >
                           {Math.round(topic.mastery_score)}%
                         </Badge>
                       </div>

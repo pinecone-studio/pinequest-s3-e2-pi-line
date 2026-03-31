@@ -35,6 +35,13 @@ import {
 import { useCameraMonitor } from "@/hooks/useCameraMonitor";
 import { useGazeMonitor } from "@/hooks/useGazeMonitor";
 
+const REQUIRE_SEB = false;
+
+function isSEBBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return navigator.userAgent.includes("SEB");
+}
+
 interface QuestionItem {
   id: string;
   type: string;
@@ -289,10 +296,17 @@ export default function ExamTaker({
   const shouldEnforceFullscreen = requireFullscreen && !isMobileStandard;
   const shouldUseSpotChecks = requireCamera && isMobileStandard;
   const shouldRunContinuousCamera = requireCamera && (!isMobileStandard || spotCheckOpen);
+  const heartbeatIntervalMs =
+    exam.proctoring_mode === "strict"
+      ? 12000
+      : exam.proctoring_mode === "standard"
+        ? 20000
+        : null;
+  const sebDetected = isSEBBrowser();
 
   const { cameraStatus, videoRef } = useCameraMonitor({
     sessionId,
-    enabled: shouldRunContinuousCamera,
+    enabled: shouldRunContinuousCamera && (!REQUIRE_SEB || sebDetected),
     preferFrontCamera: true,
   });
   const shouldPinCameraPreview =
@@ -933,16 +947,18 @@ export default function ExamTaker({
   }, [emitProctorEvent, requireCamera, videoRef, cameraStatus]);
 
   useEffect(() => {
+    if (!heartbeatIntervalMs) return;
+
     const interval = window.setInterval(() => {
       void recordExamHeartbeat(sessionId).then((result) => {
         if (result && "error" in result) {
           emitProctorEvent("heartbeat_lost", { reason: result.error ?? "heartbeat_failed" }, 5000);
         }
       });
-    }, 12000);
+    }, heartbeatIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [emitProctorEvent, sessionId]);
+  }, [emitProctorEvent, heartbeatIntervalMs, sessionId]);
 
   useEffect(() => {
     if (!challengeOpen) return;
@@ -1051,6 +1067,25 @@ export default function ExamTaker({
     displayQuestions.length > 0
       ? Math.round(((currentIndex + 1) / displayQuestions.length) * 100)
       : 0;
+
+  if (REQUIRE_SEB && !sebDetected) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center p-6">
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Safe Exam Browser шаардлагатай</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Энэ шалгалтыг зөвхөн Safe Exam Browser ашиглан нээх боломжтой.
+              SEB-ээ нээгээд дахин оролдоно уу.
+            </p>
+            <p className="text-xs text-muted-foreground">safeexambrowser.org</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (displayQuestions.length === 0 || !currentQuestion) {
     return (
