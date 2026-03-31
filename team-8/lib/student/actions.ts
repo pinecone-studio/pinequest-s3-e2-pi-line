@@ -32,7 +32,7 @@ import {
   pickBestAttempt,
   pickLatestAttempt,
 } from "@/lib/exam-attempt-utils";
-import { recomputeStudentTopicMastery } from "@/lib/student-learning/actions";
+import { enqueueStudentTopicMasteryRefresh } from "@/lib/student-learning/actions";
 import { attachPassagesToQuestions } from "@/lib/question-passages";
 import {
   DEFAULT_PROCTORING_SETTINGS,
@@ -231,6 +231,10 @@ function getSessionAnswerMetaCacheKey(sessionId: string, userId: string) {
 
 function getSessionMetaCacheKey(sessionId: string, userId: string) {
   return `session:${sessionId}:user:${userId}:meta`;
+}
+
+function getSessionHeartbeatCacheKey(sessionId: string) {
+  return `heartbeat:session:${sessionId}`;
 }
 
 function getStartSessionLockKey(examId: string, userId: string) {
@@ -531,8 +535,8 @@ async function loadStudentExamPayload(
   if (snapshot) {
     const result = {
       exam: {
-        ...exam,
         ...snapshot.exam,
+        ...exam,
         ...normalizeProctoringSettings(snapshot.exam),
       },
       questions: getStudentSafeQuestions(snapshot.questions) as StudentSafeQuestion[],
@@ -1241,7 +1245,10 @@ async function finalizeSessionAttempt(
     }
 
     if (finalStatus === "graded" || finalStatus === "timed_out") {
-      await recomputeStudentTopicMastery(userId).catch(() => {});
+      await enqueueStudentTopicMasteryRefresh(
+        userId,
+        snapshot?.exam.subject_id ?? null
+      ).catch(() => {});
     }
 
     return {
@@ -1643,15 +1650,16 @@ async function buildPreparedSessionState(
     };
   }
 
-  const sessionEndsAt =
-    new Date(session.started_at).getTime() +
-    Number(examPayload.exam.duration_minutes) * 60 * 1000;
-  const initialTimeLeftSeconds = Math.max(
-    Math.floor((sessionEndsAt - Date.now()) / 1000),
-    0
-  );
+  const sessionDeadlineMs = getSessionDeadlineMs(session.started_at, {
+    end_time: examPayload.exam.end_time,
+    duration_minutes: Number(examPayload.exam.duration_minutes ?? 0),
+  });
+  const initialTimeLeftSeconds =
+    sessionDeadlineMs === null
+      ? null
+      : Math.max(Math.floor((sessionDeadlineMs - Date.now()) / 1000), 0);
 
-  if (initialTimeLeftSeconds <= 0) {
+  if (initialTimeLeftSeconds !== null && initialTimeLeftSeconds <= 0) {
     if (session.status === "in_progress") {
       const finalized = await finalizeSessionAttempt(supabase, {
         sessionId: session.id,
@@ -2201,14 +2209,16 @@ export async function recordExamHeartbeat(sessionId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { error } = await supabase
-    .from("exam_sessions")
-    .update({ last_heartbeat_at: new Date().toISOString() })
-    .eq("id", sessionId)
-    .eq("user_id", user.id)
-    .eq("status", "in_progress");
+  const session = await getSessionMeta(supabase, sessionId, user.id);
+  if (!session) return { error: "Session олдсонгүй" };
+  if (session.status !== "in_progress") {
+    return { success: true, skipped: true };
+  }
 
-  if (error) return { error: error.message };
+  await redis.set(getSessionHeartbeatCacheKey(sessionId), new Date().toISOString(), {
+    ex: 45,
+  });
+
   return { success: true };
 }
 

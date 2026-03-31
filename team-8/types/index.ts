@@ -382,6 +382,21 @@ export interface StudentPracticeQuestion {
   explanation: string | null;
 }
 
+export interface StudentPracticeQuestionForTake {
+  id: string;
+  practice_exam_id: string;
+  subject_id: string;
+  topic_key: string;
+  subtopic: string | null;
+  type: QuestionType;
+  content: string;
+  content_html: string | null;
+  image_url: string | null;
+  options: string[] | null;
+  points: number;
+  order_index: number;
+}
+
 export interface StudentPracticeAttempt {
   id: string;
   practice_exam_id: string;
