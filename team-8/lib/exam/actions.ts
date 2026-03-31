@@ -278,7 +278,7 @@ export async function createExam(formData: FormData) {
   }
 
   revalidatePath("/educator");
-  redirect(`/educator/question-bank/private?examId=${data.id}`);
+  redirect(`/educator/exams/${data.id}/questions`);
 }
 
 async function legacyUpdateExam(examId: string, formData: FormData) {
