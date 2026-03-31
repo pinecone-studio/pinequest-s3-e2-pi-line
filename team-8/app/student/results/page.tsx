@@ -33,12 +33,12 @@ export default async function StudentResultsPage() {
   const results = await getStudentResults();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
+    <div className="flex flex-col gap-6.5">
+      <div className="flex items-center gap-6.5">
         <h2 className="text-2xl font-medium tracking-tight">
           Миний өгсөн шалгалтууд
         </h2>
-        <span className="flex h-7 min-w-[28px] items-center justify-center rounded-full bg-[#0000001A] text-sm font-medium text-foreground">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#0000001A] text-m font-medium text-foreground">
           {results.length}
         </span>
       </div>
@@ -48,7 +48,7 @@ export default async function StudentResultsPage() {
           Одоогоор шалгалт өгөөгүй байна.
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2">
           {results.map((r) => {
             const pct =
               r.max_score && r.max_score > 0
@@ -109,7 +109,7 @@ export default async function StudentResultsPage() {
 
                 <div className="mt-4 flex justify-end">
                   <Link href={`/student/exams/${r.exam_id}/result`}>
-                    <button className="inline-flex items-center gap-2 rounded-lg bg-black px-4 py-2.5 text-xs font-semibold text-white">
+                    <button className="inline-flex items-center gap-2 rounded-lg bg-black px-5.5 py-2.5 text-xs font-semibold text-white">
                       <Eye className="h-4 w-4" />
                       Үр дүн
                     </button>
