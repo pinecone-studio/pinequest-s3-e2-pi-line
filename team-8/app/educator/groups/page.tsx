@@ -14,6 +14,11 @@ import {
 } from "lucide-react"; // Added icons
 import { Input } from "@/components/ui/input"; // Assuming you have an Input component
 import { Button } from "@/components/ui/button";
+import type { StudentGroup } from "@/types";
+
+type GroupWithMembers = StudentGroup & {
+  student_group_members?: { count: number }[];
+};
 
 export default async function GroupsPage() {
   const supabase = await createClient();
@@ -28,22 +33,17 @@ export default async function GroupsPage() {
     .maybeSingle();
 
   const isAdmin = profile?.role === "admin";
-  const groups = await getGroups();
+  const groups = (await getGroups()) as GroupWithMembers[];
 
   // --- Stats Calculations ---
   const totalGroups = groups.length;
   const totalStudents = groups.reduce(
-    (acc, group: any) => acc + (group.student_group_members?.[0]?.count ?? 0),
-    0,
+    (acc, group) => acc + (group.student_group_members?.[0]?.count ?? 0),
+    0
   );
   // Placeholder average (Replace with real logic if you have scores in your DB)
   const averageScore = "82%";
 
-  const groupTypeLabel: Record<string, string> = {
-    class: "Анги",
-    elective: "Сонголт",
-    mixed: "Холимог",
-  };
   const badgeColors = [
     "#3154C5",
     "#7C3AED",
@@ -124,8 +124,7 @@ export default async function GroupsPage() {
       ) : (
         <div className="flex flex-col gap-4.5">
           {groups.map((group) => {
-            const memberCount =
-              (group as any).student_group_members?.[0]?.count ?? 0;
+            const memberCount = group.student_group_members?.[0]?.count ?? 0;
 
             // Extracting the first part of the name for the blue box (e.g., "10A")
             const shortName = group.name.split(" ")[0] || group.grade;

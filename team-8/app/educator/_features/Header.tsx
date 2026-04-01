@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import NotificationBell from "@/components/NotificationBell";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { Profile } from "@/types";
+import { ArrowLeft } from "lucide-react";
 
 function getDisplayName(profile: Profile) {
   const fullName = profile.full_name.trim();
@@ -47,7 +48,10 @@ export default function Header({ profile }: { profile: Profile }) {
           href="/educator/groups"
           className="text-[15px] font-medium text-[#111111] hover:text-[#1f2937]"
         >
-          Ангиуд руу буцах
+          <div className="flex items-center gap-1 text-[#030217]">
+            <ArrowLeft size={16} />
+            Ангиуд руу буцах
+          </div>
         </Link>
       ) : !hideGreeting ? (
         <div className="h-[49px] w-[344px] min-w-0">
