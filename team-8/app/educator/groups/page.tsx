@@ -122,23 +122,23 @@ export default async function GroupsPage() {
 
             return (
               <Link key={group.id} href={`/educator/groups/${group.id}`}>
-                <div className="flex  justify-between h-29.5 p-4 bg-white rounded-2xl transition-all hover:shadow-md border border-transparent hover:border-slate-100">
+                <div className="flex  items-between justify-between h-29.5 py-4 px-5 bg-white rounded-2xl transition-all shadow-md border border-transparent hover:border-slate-100">
                   {/* Left Side: Icon and Title Info */}
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-4">
                       {/* Blue Square Badge */}
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#3154C5] text-[13px] font-bold text-white">
                         {shortName}
                       </div>
                       <div className="flex flex-col gap-1">
-                        <div className="text-[15px] font-semibold text-slate-800">
+                        <h3 className="text-[15px] font-semibold text-slate-800">
                           {group.name} — ФУНКЦ БА ГРАФИК
-                        </div>
-                      </div>{" "}
+                        </h3>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-sm text-slate-400">
-                      <Users className="h-6 w-6" />
-                      <span>{memberCount} сурагч</span>
+                    <div className="flex items-center gap-1.5 text-sm text-[#7F7F7F]">
+                      <Users className="h-5 w-5" />
+                      <span className="text-[14px]">{memberCount} сурагч</span>
                     </div>
                   </div>
 
@@ -149,7 +149,7 @@ export default async function GroupsPage() {
                       <span>Даваа 09:00</span>
                     </div>
 
-                    <div className="flex items-center gap-2 rounded-xl bg-[#E8F7F0] px-4 py-1.5 text-[14px] font-medium text-[#10B981]">
+                    <div className="flex items-center gap-2 rounded-lg bg-[#DCFCE7] px-4 py-1.5 text-[14px] font-medium text-[#00A63E]">
                       <Eye className="h-4 w-4" />
                       Дүн харах
                     </div>
