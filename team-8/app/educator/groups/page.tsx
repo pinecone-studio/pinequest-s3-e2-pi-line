@@ -46,6 +46,18 @@ export default async function GroupsPage() {
     elective: "Сонголт",
     mixed: "Холимог",
   };
+  const badgeColors = [
+    "#3154C5",
+    "#7C3AED",
+    "#DB2777",
+    "#F97316",
+    "#16A34A",
+    "#0EA5E9",
+    "#D97706",
+    "#7F32F5",
+    "#0D9488",
+    "#BE185D",
+  ];
 
   return (
     <div className="flex flex-col gap-8">
@@ -119,6 +131,8 @@ export default async function GroupsPage() {
 
             // Extracting the first part of the name for the blue box (e.g., "10A")
             const shortName = group.name.split(" ")[0] || group.grade;
+            const badgeColor =
+              badgeColors[group.name.length % badgeColors.length];
 
             return (
               <Link key={group.id} href={`/educator/groups/${group.id}`}>
@@ -127,7 +141,10 @@ export default async function GroupsPage() {
                   <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-4">
                       {/* Blue Square Badge */}
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#3154C5] text-[13px] font-bold text-white">
+                      <div
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-[13px] font-bold text-white"
+                        style={{ backgroundColor: badgeColor }}
+                      >
                         {shortName}
                       </div>
                       <div className="flex flex-col gap-1">
