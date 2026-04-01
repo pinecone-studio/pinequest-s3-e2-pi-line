@@ -115,6 +115,58 @@ const importTypeMeta: Record<
   },
 };
 
+const hiddenCorrectAnswerWarningSnippets = [
+  "Зөв хариулт танигдсангүй",
+  "зөв хариулт олдсонгүй",
+];
+
+const hiddenCorrectAnswerErrorSnippets = [
+  "Зөв хариулт нь сонголтуудын нэг байх ёстой.",
+  "Дор хаяж 1 зөв хариулт сонгох хэрэгтэй.",
+  "Зөв хариултууд нь сонголтуудын дотор байх ёстой.",
+  "Нөхөх асуултын зөв хариултыг оруулна уу.",
+];
+
+function includesAnySnippet(value: string, snippets: string[]) {
+  return snippets.some((snippet) => value.includes(snippet));
+}
+
+function getVisibleDraftWarnings(draft: QuestionImportDraft) {
+  return draft.warnings.filter(
+    (warning) => !includesAnySnippet(warning, hiddenCorrectAnswerWarningSnippets)
+  );
+}
+
+function getVisibleDraftErrors(draft: QuestionImportDraft) {
+  return draft.errors.filter(
+    (error) => !includesAnySnippet(error, hiddenCorrectAnswerErrorSnippets)
+  );
+}
+
+function draftNeedsCorrectAnswerSelection(draft: QuestionImportDraft) {
+  if (draft.type === "multiple_choice") {
+    const options = draft.options.map((item) => item.trim()).filter(Boolean);
+    const answer = draft.correctAnswer.trim();
+
+    return !answer || !options.includes(answer);
+  }
+
+  if (draft.type === "multiple_response") {
+    const options = draft.options.map((item) => item.trim()).filter(Boolean);
+    const answers = draft.multipleCorrectAnswers
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    return answers.length === 0 || answers.some((answer) => !options.includes(answer));
+  }
+
+  if (draft.type === "fill_blank") {
+    return !draft.correctAnswer.trim();
+  }
+
+  return false;
+}
+
 function createEmptyMatchingPair(): QuestionImportMatchingPair {
   return { left: "", right: "" };
 }
@@ -216,13 +268,19 @@ export default function QuestionImportActions({
   });
 
   const summary = useMemo(() => {
-    const invalidCount = drafts.filter((draft) => draft.errors.length > 0).length;
-    const warningCount = drafts.filter((draft) => draft.warnings.length > 0).length;
+    const invalidCount = drafts.filter((draft) => getVisibleDraftErrors(draft).length > 0).length;
+    const warningCount = drafts.filter(
+      (draft) => getVisibleDraftWarnings(draft).length > 0
+    ).length;
+    const missingCorrectAnswerCount = drafts.filter((draft) =>
+      draftNeedsCorrectAnswerSelection(draft)
+    ).length;
 
     return {
       total: drafts.length,
       invalid: invalidCount,
       warning: warningCount,
+      missingCorrectAnswer: missingCorrectAnswerCount,
     };
   }, [drafts]);
 
@@ -838,11 +896,11 @@ export default function QuestionImportActions({
 
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{summary.total} draft</Badge>
-            <Badge variant={summary.invalid > 0 ? "destructive" : "secondary"}>
-              {summary.invalid > 0
-                ? `${summary.invalid} алдаатай`
-                : "Шууд импортлоход бэлэн"}
-            </Badge>
+            {summary.invalid > 0 ? (
+              <Badge variant="destructive">{summary.invalid} алдаатай</Badge>
+            ) : summary.missingCorrectAnswer === 0 ? (
+              <Badge variant="secondary">Шууд импортлоход бэлэн</Badge>
+            ) : null}
             {summary.warning > 0 ? (
               <Badge variant="outline" className="border-amber-300 text-amber-700">
                 {summary.warning} анхааруулах мөр
@@ -850,6 +908,21 @@ export default function QuestionImportActions({
             ) : null}
             {selectedFile ? <Badge variant="ghost">{selectedFile.name}</Badge> : null}
           </div>
+
+          {summary.missingCorrectAnswer > 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  <span className="font-medium">
+                    {summary.missingCorrectAnswer} асуулт дээр зөв хариулт
+                    сонгогдоогүй байна.
+                  </span>{" "}
+                  Preview дээр зөв хариултыг сонгоод үргэлжлүүлнэ үү.
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           {parseWarnings.length > 0 ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -877,7 +950,9 @@ export default function QuestionImportActions({
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="outline">#{draft.sourceRow}</Badge>
                       <Badge
-                        variant={draft.errors.length > 0 ? "destructive" : "secondary"}
+                        variant={
+                          getVisibleDraftErrors(draft).length > 0 ? "destructive" : "secondary"
+                        }
                       >
                         {questionTypes.find((item) => item.value === draft.type)?.label}
                       </Badge>
@@ -894,29 +969,29 @@ export default function QuestionImportActions({
                     </Button>
                   </div>
 
-                  {draft.warnings.length > 0 ? (
+                  {getVisibleDraftWarnings(draft).length > 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                       <p className="font-medium">Анхаарах зүйл</p>
                       <ul className="mt-2 list-disc pl-5">
-                        {draft.warnings.map((warning) => (
+                        {getVisibleDraftWarnings(draft).map((warning) => (
                           <li key={`${draft.draftId}-${warning}`}>{warning}</li>
                         ))}
                       </ul>
                     </div>
                   ) : null}
 
-                  {draft.errors.length > 0 ? (
+                  {getVisibleDraftErrors(draft).length > 0 ? (
                     <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                       <p className="font-medium">Засах шаардлагатай</p>
                       <ul className="mt-2 list-disc pl-5">
-                        {draft.errors.map((item) => (
+                        {getVisibleDraftErrors(draft).map((item) => (
                           <li key={`${draft.draftId}-${item}`}>{item}</li>
                         ))}
                       </ul>
                     </div>
                   ) : null}
 
-                  <div className="grid gap-4 md:grid-cols-[1fr_220px]">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
                     <div className="space-y-2">
                       <Label>Асуулт</Label>
                       <Textarea
@@ -932,7 +1007,7 @@ export default function QuestionImportActions({
                       />
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px] lg:items-end">
                       <div className="space-y-2">
                         <Label>Асуултын төрөл</Label>
                         <Select
@@ -943,7 +1018,7 @@ export default function QuestionImportActions({
                             )
                           }
                         >
-                          <SelectTrigger>
+                          <SelectTrigger className="w-full">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -959,6 +1034,7 @@ export default function QuestionImportActions({
                       <div className="space-y-2">
                         <Label>Оноо</Label>
                         <Input
+                          className="text-center tabular-nums"
                           type="number"
                           min="0.5"
                           step="0.5"
@@ -971,37 +1047,6 @@ export default function QuestionImportActions({
                           }
                         />
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Тайлбар</Label>
-                      <Textarea
-                        value={draft.explanation}
-                        onChange={(event) =>
-                          updateDraft(draft.draftId, (currentDraft) => ({
-                            ...currentDraft,
-                            explanation: event.target.value,
-                          }))
-                        }
-                        rows={3}
-                        placeholder="Тайлбар / solution"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Зураг URL</Label>
-                      <Input
-                        value={draft.imageUrl}
-                        onChange={(event) =>
-                          updateDraft(draft.draftId, (currentDraft) => ({
-                            ...currentDraft,
-                            imageUrl: event.target.value,
-                          }))
-                        }
-                        placeholder="https://example.com/question-image.png"
-                      />
                     </div>
                   </div>
 
