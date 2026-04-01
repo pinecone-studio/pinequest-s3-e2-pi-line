@@ -18,10 +18,9 @@ export default async function GradingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Дүн шалгах</h2>
-        <p className="text-muted-foreground">
-          Шалгагдаагүй шалгалтын хариултууд
-        </p>
+        <h2 className="text-[20px] font-medium tracking-tight">
+          Сурагчдын хариулт засах
+        </h2>
       </div>
 
       {submissions.length === 0 ? (
@@ -49,7 +48,9 @@ export default async function GradingPage() {
                     <div className="min-w-0">
                       <CardTitle>
                         <StudentIdentity
-                          name={profile?.full_name || profile?.email || "Оюутан"}
+                          name={
+                            profile?.full_name || profile?.email || "Оюутан"
+                          }
                           email={profile?.email}
                           avatarUrl={profile?.avatar_url}
                           size="sm"
@@ -63,7 +64,9 @@ export default async function GradingPage() {
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                      {pct !== null && <Badge variant="outline">Авто: {pct}%</Badge>}
+                      {pct !== null && (
+                        <Badge variant="outline">Авто: {pct}%</Badge>
+                      )}
                       <Link href={`/educator/grading/${sub.id}`}>
                         <Button size="sm">Шалгах</Button>
                       </Link>

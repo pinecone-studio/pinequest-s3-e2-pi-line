@@ -612,7 +612,7 @@ export default function QuestionBankBrowser({
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5 ">
       {examId && examTitle ? (
         <Card>
           <CardContent className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-between">
@@ -629,10 +629,10 @@ export default function QuestionBankBrowser({
         </Card>
       ) : null}
 
-      <div className="flex items-center bg-[#F0EEEE] w-fit rounded-full p-1 gap-1">
+      <div className="flex w-full max-w-[1440px] items-center gap-4">
         {!isSubjectFocused ? (
           <div
-            className="flex h-9 items-center cursor-pointer overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex h-9 items-center cursor-pointer overflow-x-auto rounded-full bg-[#F0EEEE] p-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             role="tablist"
             aria-label="Асуултын сангийн орон"
           >
@@ -678,12 +678,12 @@ export default function QuestionBankBrowser({
           </div>
         ) : null}
 
-        {tab === "private" && (
+        {tab === "private" && !isSubjectFocused ? (
           <PrivateBankAddMaterial
             subjects={subjects}
             viewerIsAdmin={viewerIsAdmin}
           />
-        )}
+        ) : null}
       </div>
 
       {!isSubjectFocused ? (

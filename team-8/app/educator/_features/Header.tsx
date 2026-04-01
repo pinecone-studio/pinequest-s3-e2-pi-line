@@ -38,8 +38,10 @@ export default function Header({ profile }: { profile: Profile }) {
   const subjectId = searchParams.get("subjectId");
   const hideGreeting =
     pathname === "/educator/groups" ||
-    pathname?.startsWith("/educator/question-bank");
+    pathname?.startsWith("/educator/question-bank") ||
+    pathname?.startsWith("/educator/grading");
   const showGroupsBackLink = pathname?.startsWith("/educator/groups/");
+  const showDashboardBackLink = pathname?.startsWith("/educator/grading");
   const showQuestionBankBackLink =
     pathname?.startsWith("/educator/question-bank") && Boolean(subjectId);
   const questionBankBackHref = pathname?.startsWith(
@@ -50,10 +52,15 @@ export default function Header({ profile }: { profile: Profile }) {
 
   return (
     <header
-      className={`flex flex-col gap-5 py-2 sm:flex-row sm:items-center ${
-        hideGreeting && !showGroupsBackLink && !showQuestionBankBackLink
+      className={`flex flex-col h-30.5 gap-5 py-2 sm:flex-row sm:items-center ${
+        hideGreeting &&
+        !showGroupsBackLink &&
+        !showQuestionBankBackLink &&
+        !showDashboardBackLink
           ? "sm:justify-end"
-          : showGroupsBackLink || showQuestionBankBackLink
+          : showGroupsBackLink ||
+              showQuestionBankBackLink ||
+              showDashboardBackLink
             ? "sm:justify-start"
             : "sm:justify-between"
       }`}
@@ -66,6 +73,16 @@ export default function Header({ profile }: { profile: Profile }) {
           <div className="flex items-center gap-1 text-[#030217]">
             <ArrowLeft size={16} />
             Ангиуд руу буцах
+          </div>
+        </Link>
+      ) : showDashboardBackLink ? (
+        <Link
+          href="/educator"
+          className="text-[15px] font-medium text-[#111111] hover:text-[#1f2937]"
+        >
+          <div className="flex items-center gap-1 text-[#030217]">
+            <ArrowLeft size={16} />
+            Нүүр хуудас руу буцах
           </div>
         </Link>
       ) : showQuestionBankBackLink ? (
@@ -91,7 +108,9 @@ export default function Header({ profile }: { profile: Profile }) {
 
       <div
         className={`flex h-[40px] w-[100px] items-center justify-end gap-[20px] self-end sm:self-auto ${
-          showGroupsBackLink || showQuestionBankBackLink ? "sm:ml-auto" : ""
+          showGroupsBackLink || showQuestionBankBackLink || showDashboardBackLink
+            ? "sm:ml-auto"
+            : ""
         }`}
       >
         <NotificationBell />

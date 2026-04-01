@@ -218,7 +218,7 @@ export default function ExamScheduleClient({
   );
 
   return (
-    <div className="pt-[20px]">
+    <div className="pt-[20px] flex flex-col gap-5">
       <div>
         <h2
           style={{
@@ -254,6 +254,7 @@ export default function ExamScheduleClient({
           style={{
             display: "flex",
             alignItems: "center",
+
             justifyContent: "space-between",
             padding: "16px 14px 12px 14px",
             gap: 12,
