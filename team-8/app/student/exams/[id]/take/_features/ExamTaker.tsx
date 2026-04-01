@@ -389,9 +389,7 @@ export default function ExamTaker({
     "Камераа нээгээд нүүрээ төвд барьж, богино spot-check хийнэ үү."
   );
   const [spotCheckBusy, setSpotCheckBusy] = useState(false);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator === "undefined" ? true : navigator.onLine
-  );
+  const [isOnline, setIsOnline] = useState(true);
   const [orientation, setOrientation] = useState<"portrait" | "landscape">(
     runtimeReadiness?.orientation ?? "portrait"
   );
@@ -828,14 +826,21 @@ export default function ExamTaker({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          void handleSubmit();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [challengeOpen, handleSubmit]);
+  }, [challengeOpen]);
+
+  // Submit when timer hits zero (must be outside the state updater to avoid
+  // calling router.push during React's reconciliation phase).
+  useEffect(() => {
+    if (timeLeft === 0 && initialTimeLeftSeconds > 0) {
+      handleSubmitRef.current();
+    }
+  }, [timeLeft, initialTimeLeftSeconds]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -963,6 +968,11 @@ export default function ExamTaker({
 
   useEffect(() => {
     let offlineStartedAt = 0;
+    const initialOnline =
+      typeof navigator !== "undefined" && typeof navigator.onLine === "boolean"
+        ? navigator.onLine
+        : true;
+    setIsOnline(initialOnline);
 
     const handleOffline = () => {
       offlineStartedAt = Date.now();
@@ -1539,8 +1549,8 @@ export default function ExamTaker({
         </div>
       )}
 
-      <div className="mx-auto flex w-full max-w-[1090px] flex-col items-center gap-[30px] px-4 py-8 lg:py-10">
-        <div className="w-screen bg-[#FAFAFA] shadow-[0_4px_10px_rgba(0,0,0,0.1)]">
+      <div className="mx-auto flex w-full max-w-[1090px] flex-col items-center gap-[30px] px-4 pb-8 pt-[91px] lg:pt-[99px]">
+        <div className="fixed left-0 right-0 top-0 z-50 w-screen bg-[#FAFAFA] shadow-[0_4px_10px_rgba(0,0,0,0.1)]">
           <div className="mx-auto flex h-[59px] w-full max-w-[1512px] items-center justify-center gap-[18px] px-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEE1FE]">
               <AlarmIcon />
