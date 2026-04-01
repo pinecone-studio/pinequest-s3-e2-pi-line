@@ -612,7 +612,7 @@ export default function QuestionBankBrowser({
   }
 
   return (
-    <div className="flex flex-col gap-5 pt-10">
+    <div className="flex flex-col gap-5 ">
       {examId && examTitle ? (
         <Card>
           <CardContent className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-between">
