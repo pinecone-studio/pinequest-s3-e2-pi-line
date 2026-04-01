@@ -1493,12 +1493,85 @@ export async function deleteQuestionBankItem(bankQuestionId: string) {
   return { success: true };
 }
 
+export async function bulkDeleteQuestionBankItems(bankQuestionIds: string[]) {
+  const ids = Array.from(
+    new Set(bankQuestionIds.map((id) => id.trim()).filter(Boolean))
+  );
+  if (ids.length === 0) {
+    return { error: "Устгах материалуудаа сонгоно уу." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Нэвтрээгүй байна" };
+
+  const context = await getQuestionBankAccessContext(supabase, user.id);
+  const { data: rows, error: rowsError } = await supabase
+    .from("question_bank")
+    .select("id, created_by, subject_id, visibility")
+    .in("id", ids);
+
+  if (rowsError?.code === "42703") {
+    return { error: QUESTION_BANK_GOVERNANCE_ERROR };
+  }
+
+  const manageableRows = (rows ?? []).filter((row) =>
+    canManageQuestionBankItem(row, context)
+  );
+  if (manageableRows.length === 0) {
+    return { error: "Сонгосон материалуудаа устгах эрх байхгүй байна." };
+  }
+
+  const manageableIds = manageableRows.map((row) => row.id);
+  const { error } = await supabase.from("question_bank").delete().in("id", manageableIds);
+  if (error) return { error: error.message };
+
+  revalidatePath("/educator/question-bank");
+  revalidatePath("/educator/question-bank/private");
+  return { success: true, deletedCount: manageableIds.length };
+}
+
 const PRIVATE_BANK_IMAGE_MIME = [
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/gif",
 ] as const;
+
+function splitNumberedMaterialItems(rawText: string) {
+  const normalized = rawText.replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  const lines = normalized.split("\n");
+  const items: string[] = [];
+  let current: string[] = [];
+
+  const startPattern = /^\s*(\d{1,3})\s*([).]|-)\s+/;
+
+  for (const line of lines) {
+    const isStart = startPattern.test(line);
+    if (isStart && current.length > 0) {
+      const chunk = current.join("\n").trim();
+      if (chunk) items.push(chunk);
+      current = [line];
+      continue;
+    }
+
+    current.push(line);
+  }
+
+  const last = current.join("\n").trim();
+  if (last) items.push(last);
+
+  // Heuristic: only split when it really looks like multiple problems.
+  const trimmed = items.map((item) => item.trim()).filter(Boolean);
+  if (trimmed.length < 2) return [];
+
+  // Avoid exploding in case OCR is noisy.
+  return trimmed.slice(0, 60);
+}
 
 export async function createPrivateBankEntryFromImage(formData: FormData) {
   const supabase = await createClient();
@@ -1509,6 +1582,7 @@ export async function createPrivateBankEntryFromImage(formData: FormData) {
 
   const subjectId = String(formData.get("subject_id") ?? "").trim();
   const subtopic = String(formData.get("subtopic") ?? "").trim() || null;
+  const batchLabelRaw = String(formData.get("batch_label") ?? "").trim();
   const gradeRaw = String(formData.get("grade_level") ?? "").trim();
   const gradeLevelParsed = parseInt(gradeRaw, 10);
   const grade_level =
@@ -1542,6 +1616,53 @@ export async function createPrivateBankEntryFromImage(formData: FormData) {
   }
 
   const buffer = Buffer.from(await uploaded.arrayBuffer());
+
+  let content = "";
+  if (useAi) {
+    const extracted = await extractQuestionTextFromImageBytes(
+      new Uint8Array(buffer),
+      mime
+    );
+    if (extracted) {
+      content = extracted;
+    }
+  }
+
+  const batchId = randomUUID();
+  const tags = [
+    `batch:${batchId}`,
+    ...(batchLabelRaw ? [`batchName:${batchLabelRaw}`] : []),
+  ];
+
+  const splitItems = useAi ? splitNumberedMaterialItems(content) : [];
+  if (splitItems.length > 0) {
+    const rows = splitItems.map((itemText) => ({
+      subject_id: subjectId || null,
+      created_by: user.id,
+      visibility: "private" as const,
+      type: "essay" as const,
+      content: itemText,
+      content_html: null,
+      image_url: null,
+      options: null,
+      correct_answer: null,
+      points: 1,
+      difficulty: "medium" as const,
+      difficulty_level: 2 as const,
+      tags,
+      subtopic,
+      grade_level,
+      explanation: null,
+    }));
+
+    const { error: insertError } = await supabase.from("question_bank").insert(rows);
+    if (insertError) return { error: insertError.message };
+
+    revalidatePath("/educator/question-bank");
+    revalidatePath("/educator/question-bank/private");
+    return { success: true, count: rows.length };
+  }
+
   const ext =
     mime === "image/png"
       ? "png"
@@ -1565,16 +1686,6 @@ export async function createPrivateBankEntryFromImage(formData: FormData) {
   const { data: pub } = supabase.storage.from("question-media").getPublicUrl(path);
   const imageUrl = pub.publicUrl;
 
-  let content = "";
-  if (useAi) {
-    const extracted = await extractQuestionTextFromImageBytes(
-      new Uint8Array(buffer),
-      mime
-    );
-    if (extracted) {
-      content = extracted;
-    }
-  }
   if (!content.trim()) {
     content =
       "Энэ материал голлон зураг дээр байрлана. Дээрх «Засах» товчоор асуултын төрөл, текст, сонголт, зөв хариултаа бүрэн тохируулна уу.";
@@ -1593,7 +1704,7 @@ export async function createPrivateBankEntryFromImage(formData: FormData) {
     points: 1,
     difficulty: "medium",
     difficulty_level: 2,
-    tags: [],
+    tags,
     subtopic,
     grade_level,
     explanation: null,
@@ -1615,6 +1726,7 @@ export async function createPrivateBankEntryFromText(formData: FormData) {
 
   const subjectId = String(formData.get("subject_id") ?? "").trim();
   const subtopic = String(formData.get("subtopic") ?? "").trim() || null;
+  const batchLabelRaw = String(formData.get("batch_label") ?? "").trim();
   const gradeRaw = String(formData.get("grade_level") ?? "").trim();
   const gradeLevelParsed = parseInt(gradeRaw, 10);
   const grade_level =
@@ -1638,6 +1750,12 @@ export async function createPrivateBankEntryFromText(formData: FormData) {
     }
   }
 
+  const batchId = randomUUID();
+  const tags = [
+    `batch:${batchId}`,
+    ...(batchLabelRaw ? [`batchName:${batchLabelRaw}`] : []),
+  ];
+
   const { error: insertError } = await supabase.from("question_bank").insert({
     subject_id: subjectId || null,
     created_by: user.id,
@@ -1651,7 +1769,7 @@ export async function createPrivateBankEntryFromText(formData: FormData) {
     points: 1,
     difficulty: "medium",
     difficulty_level: 2,
-    tags: [],
+    tags,
     subtopic,
     grade_level,
     explanation: null,
