@@ -815,14 +815,21 @@ export default function ExamTaker({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          void handleSubmit();
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [challengeOpen, handleSubmit]);
+  }, [challengeOpen]);
+
+  // Submit when timer hits zero (must be outside the state updater to avoid
+  // calling router.push during React's reconciliation phase).
+  useEffect(() => {
+    if (timeLeft === 0 && initialTimeLeftSeconds > 0) {
+      handleSubmitRef.current();
+    }
+  }, [timeLeft, initialTimeLeftSeconds]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
