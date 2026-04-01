@@ -797,7 +797,7 @@ export default function ExamTaker({
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(draftStorageKey);
       }
-      router.push(`/student/exams/${exam.id as string}/result`);
+      router.replace(`/student/exams/${exam.id as string}/result`);
     } else {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
