@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Suspense,
   useMemo,
   useState,
   useTransition,
@@ -354,7 +355,7 @@ function RoleLoginCard({
   );
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -418,5 +419,13 @@ export default function LoginPage() {
         <RolePicker disabled={isPending} onSelect={handleRoleSelect} />
       )}
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<RolePicker disabled={false} onSelect={() => {}} />}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

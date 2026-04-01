@@ -4,10 +4,8 @@ import Link from "next/link";
 import {
   ArrowUpRight,
   BookOpen,
-  CornerDownLeft,
   CornerDownRight,
   FileText,
-  Pencil,
   Plus,
 } from "lucide-react";
 import { getEducatorStats } from "@/lib/dashboard/actions";
