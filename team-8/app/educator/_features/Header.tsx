@@ -77,12 +77,12 @@ export default function Header({ profile }: { profile: Profile }) {
         </Link>
       ) : showDashboardBackLink ? (
         <Link
-          href="/educator"
+          href="/educator/grading"
           className="text-[15px] font-medium text-[#111111] hover:text-[#1f2937]"
         >
           <div className="flex items-center gap-1 text-[#030217]">
             <ArrowLeft size={16} />
-            Нүүр хуудас руу буцах
+            Сурагчдын хариулт руу буцах
           </div>
         </Link>
       ) : showQuestionBankBackLink ? (
