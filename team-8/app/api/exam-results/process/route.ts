@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/notification/cron";
-import { processPendingReleasedExamResults } from "@/lib/student/actions";
+import { processPendingExamResults } from "@/lib/student/actions";
 
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const limit = Number(url.searchParams.get("limit") ?? 10);
 
   try {
-    const result = await processPendingReleasedExamResults(limit);
+    const result = await processPendingExamResults(limit);
     return NextResponse.json({
       ok: true,
       checkedAt: new Date().toISOString(),

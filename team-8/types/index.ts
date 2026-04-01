@@ -258,6 +258,10 @@ export type ExamSessionStatus =
   | "graded"
   | "timed_out";
 
+export type AnswerScoreSource = "objective" | "ai" | "teacher";
+
+export type AnswerReviewStatus = "none" | "requested" | "resolved";
+
 export interface ExamSession {
   id: string;
   exam_id: string;
@@ -299,6 +303,11 @@ export interface Answer {
   ai_score: number | null;
   ai_feedback: string | null;
   ai_graded_at: string | null;
+  score_source: AnswerScoreSource;
+  review_status: AnswerReviewStatus;
+  review_requested_at: string | null;
+  review_reason: string | null;
+  review_resolved_at: string | null;
   first_answered_at: string | null;
   last_changed_at: string | null;
   change_count: number;
