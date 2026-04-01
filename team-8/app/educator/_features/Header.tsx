@@ -50,7 +50,7 @@ export default function Header({ profile }: { profile: Profile }) {
 
   return (
     <header
-      className={`flex flex-col gap-5 py-2 sm:flex-row sm:items-center ${
+      className={`flex flex-col h-30.5 gap-5 py-2 sm:flex-row sm:items-center ${
         hideGreeting && !showGroupsBackLink && !showQuestionBankBackLink
           ? "sm:justify-end"
           : showGroupsBackLink || showQuestionBankBackLink

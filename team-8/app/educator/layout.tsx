@@ -19,7 +19,7 @@ export default async function EducatorLayout({
     <div className="min-h-screen bg-zinc-50 text-zinc-900">
       <div className="flex min-h-screen">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto bg-gradient-to-b from-[#e4f3fd] to-[#ffffff] px-16 py-6">
+        <main className="flex-1 overflow-y-auto bg-gradient-to-b from-[#e4f3fd] to-[#ffffff] px-16 ">
           <div className="mx-auto flex w-full max-w-[1440px] flex-col ">
             <Header profile={profile} />
             {children}

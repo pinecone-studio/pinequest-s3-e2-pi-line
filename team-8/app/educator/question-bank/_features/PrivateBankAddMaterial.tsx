@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
-  ChevronDown,
   FileText,
   ImagePlus,
   Loader2,
+  Plus,
   PlusCircle,
   Upload,
 } from "lucide-react";
@@ -56,7 +56,7 @@ export default function PrivateBankAddMaterial({
   const materialFileInputRef = useRef<HTMLInputElement>(null);
 
   const sortedSubjects = [...subjects].sort((a, b) =>
-    a.name.localeCompare(b.name, "mn")
+    a.name.localeCompare(b.name, "mn"),
   );
 
   const subjectRequired = !viewerIsAdmin && sortedSubjects.length > 0;
@@ -110,7 +110,9 @@ export default function PrivateBankAddMaterial({
     event.preventDefault();
     setErrorText(null);
     if (!textContent.trim()) {
-      setErrorText("Материалын текстээ бичнэ эсвэл тестийн файлаас уншуулна уу.");
+      setErrorText(
+        "Материалын текстээ бичнэ эсвэл тестийн файлаас уншуулна уу.",
+      );
       return;
     }
     const form = event.currentTarget;
@@ -133,14 +135,18 @@ export default function PrivateBankAddMaterial({
   }
 
   return (
-    <div className="flex shrink-0 items-center justify-end self-center">
+    <div className="ml-auto flex shrink-0 items-center justify-end ">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button type="button" className="gap-2 shadow-sm">
-            <PlusCircle className="h-4 w-4" />
-            Шинэ материал оруулах
-            <ChevronDown className="h-4 w-4 opacity-70" />
-          </Button>
+          <div className="flex w-full justify-end">
+            <Button
+              type="button"
+              className="h-9 gap-2 rounded-full bg-[#3B6CB0] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#355FA0]"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Асуулт нэмэх</span>
+            </Button>
+          </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem
@@ -186,8 +192,8 @@ export default function PrivateBankAddMaterial({
           <DialogHeader>
             <DialogTitle>Текстээр материал нэмэх</DialogTitle>
             <DialogDescription>
-              Хувийн санд хадгална. Сонголттой асуулт бол хадгалсны дараа жагсаалтаас{" "}
-              <strong>Засах</strong> дарна уу.
+              Хувийн санд хадгална. Сонголттой асуулт бол хадгалсны дараа
+              жагсаалтаас <strong>Засах</strong> дарна уу.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -202,7 +208,8 @@ export default function PrivateBankAddMaterial({
                 placeholder="Жишээ: ЭЕШ 2023 · Хувилбар A"
               />
               <p className="text-xs text-muted-foreground">
-                Нэг дор оруулсан материалуудаа дараа нь багцаар нь шүүж/устгахад тусална.
+                Нэг дор оруулсан материалуудаа дараа нь багцаар нь шүүж/устгахад
+                тусална.
               </p>
             </div>
 
@@ -219,7 +226,9 @@ export default function PrivateBankAddMaterial({
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   defaultValue=""
                 >
-                  <option value="">{viewerIsAdmin ? "— (заавал биш)" : "Сонгох"}</option>
+                  <option value="">
+                    {viewerIsAdmin ? "— (заавал биш)" : "Сонгох"}
+                  </option>
                   {sortedSubjects.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -265,8 +274,9 @@ export default function PrivateBankAddMaterial({
                   Тестийн материал файл оруулах
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Word (.docx), Excel (.xlsx, .xls), текст (.txt) эсвэл .csv. Файлаа сонгоод{" "}
-                  <strong>Унших</strong> дарвал доорх талбарт оруулна — гараар засаад хадгална.
+                  Word (.docx), Excel (.xlsx, .xls), текст (.txt) эсвэл .csv.
+                  Файлаа сонгоод <strong>Унших</strong> дарвал доорх талбарт
+                  оруулна — гараар засаад хадгална.
                 </p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -363,8 +373,9 @@ export default function PrivateBankAddMaterial({
           <DialogHeader>
             <DialogTitle>Зурагаар материал нэмэх</DialogTitle>
             <DialogDescription>
-              JPG / PNG / WEBP / GIF, 5MB хүртэл. Хүссэн бол AI-аар текст уншуулна. Дараа нь{" "}
-              <strong>Засах</strong> товчоор төрөл тохируулна.
+              JPG / PNG / WEBP / GIF, 5MB хүртэл. Хүссэн бол AI-аар текст
+              уншуулна. Дараа нь <strong>Засах</strong> товчоор төрөл
+              тохируулна.
             </DialogDescription>
           </DialogHeader>
           <form
@@ -396,7 +407,9 @@ export default function PrivateBankAddMaterial({
                   className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   defaultValue=""
                 >
-                  <option value="">{viewerIsAdmin ? "— (заавал биш)" : "Сонгох"}</option>
+                  <option value="">
+                    {viewerIsAdmin ? "— (заавал биш)" : "Сонгох"}
+                  </option>
                   {sortedSubjects.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
@@ -454,13 +467,19 @@ export default function PrivateBankAddMaterial({
             </div>
 
             <label className="flex cursor-pointer items-start gap-3 rounded-md border border-dashed p-3 text-sm">
-              <input type="checkbox" name="use_ai" defaultChecked className="mt-1 h-4 w-4" />
+              <input
+                type="checkbox"
+                name="use_ai"
+                defaultChecked
+                className="mt-1 h-4 w-4"
+              />
               <span>
                 <span className="font-medium text-foreground">
                   Зургийн текстийг AI-аар уншуулах
                 </span>
                 <span className="block text-muted-foreground">
-                  Идэвхгүй бол зургийг л холбоно; текстийг &quot;Засах&quot;-аар нэмнэ.
+                  Идэвхгүй бол зургийг л холбоно; текстийг &quot;Засах&quot;-аар
+                  нэмнэ.
                 </span>
               </span>
             </label>
