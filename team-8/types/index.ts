@@ -346,7 +346,11 @@ export interface StudentSubjectStudyPlan {
   student_id: string;
   subject_id: string;
   mastery_updated_at: string;
+  pending_mastery_updated_at: string | null;
   generated_at: string;
+  requested_at: string;
+  status: "pending" | "ready" | "failed";
+  last_error: string | null;
   summary: string;
   priorities: string[];
   steps: string[];
@@ -359,6 +363,10 @@ export interface StudentPracticeExam {
   subject_id: string;
   title: string;
   description: string | null;
+  status: "building" | "ready" | "failed";
+  build_error: string | null;
+  build_requested_at: string | null;
+  ready_at: string | null;
   selected_topics: Array<{ topic_key: string; topic_label: string }>;
   question_count: number;
   created_at: string;
@@ -409,6 +417,8 @@ export interface StudentPracticeAttempt {
   total_score: number | null;
   max_score: number | null;
   attempt_number: number;
+  draft_answers: Record<string, string>;
+  draft_saved_at: string | null;
 }
 
 export interface StudentPracticeAnswer {

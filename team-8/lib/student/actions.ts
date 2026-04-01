@@ -751,7 +751,6 @@ function revalidateStudentResultPaths(examId: string) {
   revalidatePath("/student/exams");
   revalidatePath("/student/results");
   revalidatePath("/student/schedule");
-  revalidatePath("/student/learning");
   revalidatePath(`/student/exams/${examId}/result`);
 }
 
@@ -1408,12 +1407,23 @@ async function materializeSessionScoresIfNeeded(
 async function materializePendingReleasedSessionsForUser(
   supabase: SupabaseActionClient,
   userId: string,
-  examId?: string,
+  options?: {
+    examId?: string;
+    maxToProcess?: number;
+    skipSideEffects?: boolean;
+  },
 ) {
+  const examId = options?.examId;
+  const safeMaxToProcess = Math.max(
+    1,
+    Math.min(Number(options?.maxToProcess ?? (examId ? 3 : 2)), 10),
+  );
+  const candidateLimit = Math.max(safeMaxToProcess * 4, safeMaxToProcess);
+
   let query = supabase
     .from("exam_sessions")
     .select(
-      "id, exam_id, user_id, status, total_score, max_score, attempt_number, started_at",
+      "id, exam_id, user_id, status, total_score, max_score, attempt_number, started_at, submitted_at",
     )
     .eq("user_id", userId)
     .in("status", ["submitted", "timed_out"])
@@ -1425,13 +1435,23 @@ async function materializePendingReleasedSessionsForUser(
 
   const { data: sessions, error } = await query.order("attempt_number", {
     ascending: false,
-  });
+  }).limit(candidateLimit);
 
   if (error) return { error: error.message };
 
   let processed = 0;
 
-  for (const session of sessions ?? []) {
+  const orderedSessions = [...(sessions ?? [])].sort((left, right) => {
+    const leftTime = new Date(String(left.submitted_at ?? left.started_at ?? 0)).getTime();
+    const rightTime = new Date(String(right.submitted_at ?? right.started_at ?? 0)).getTime();
+    return rightTime - leftTime;
+  });
+
+  for (const session of orderedSessions.slice(0, candidateLimit)) {
+    if (processed >= safeMaxToProcess) {
+      break;
+    }
+
     const effectiveExam = await getEffectiveExamAccessForStudent(
       supabase,
       userId,
@@ -1447,6 +1467,7 @@ async function materializePendingReleasedSessionsForUser(
       sessionId: String(session.id),
       examId: String(session.exam_id),
       userId,
+      skipSideEffects: options?.skipSideEffects ?? false,
     });
 
     if (!("error" in result)) {
@@ -2961,7 +2982,11 @@ export async function getExamResult(examId: string) {
     const materialized = await materializePendingReleasedSessionsForUser(
       supabase,
       user.id,
-      examId,
+      {
+        examId,
+        maxToProcess: 3,
+        skipSideEffects: true,
+      },
     );
 
     if ("error" in materialized) {
@@ -3164,6 +3189,10 @@ export async function getStudentResults() {
   const materialized = await materializePendingReleasedSessionsForUser(
     supabase,
     user.id,
+    {
+      maxToProcess: 2,
+      skipSideEffects: true,
+    },
   );
   if ("error" in materialized) {
     console.error(
