@@ -6,6 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import MathContent from "@/components/math/MathContent";
 import {
   saveStudentPracticeDraft,
@@ -24,12 +34,16 @@ export default function PracticeExamTaker({
   examTitle,
   subjectName,
   questions,
+  attemptId,
+  questionSetFingerprint,
   savedAnswers,
 }: {
   practiceExamId: string;
   examTitle: string;
   subjectName: string;
   questions: StudentPracticeQuestionForTake[];
+  attemptId: string | null;
+  questionSetFingerprint: string;
   savedAnswers: Record<string, string>;
 }) {
   const router = useRouter();
@@ -37,6 +51,7 @@ export default function PracticeExamTaker({
   const [answers, setAnswers] = useState<Record<string, string>>(savedAnswers);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [draftStatus, setDraftStatus] = useState<"idle" | "saving" | "saved" | "error">(
     Object.keys(savedAnswers).length > 0 ? "saved" : "idle"
   );
@@ -47,18 +62,18 @@ export default function PracticeExamTaker({
     [questions]
   );
   const lastSavedSnapshotRef = useRef(getSerializedDraftSnapshot(savedAnswers));
-  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const savePromiseRef = useRef<Promise<boolean> | null>(null);
   const currentQuestion = questions[currentIndex] ?? questions[0] ?? null;
   const currentQuestionId = currentQuestion?.id ?? "";
   const currentMultiAnswer = parseStoredArray(answers[currentQuestionId]);
   const matchingOptions = parseMatchingOptions(currentQuestion?.options);
-  const currentMatchingAnswer = (() => {
+  const currentMatchingAnswer = useMemo<Record<string, string>>(() => {
     try {
       return JSON.parse(answers[currentQuestionId] ?? "{}") as Record<string, string>;
     } catch {
       return {};
     }
-  })();
+  }, [answers, currentQuestionId]);
 
   const answeredCount = useMemo(
     () =>
@@ -67,12 +82,24 @@ export default function PracticeExamTaker({
     [answers, questions]
   );
 
+  const hasEssayQuestions = useMemo(
+    () => questions.some((q) => q.type === "essay"),
+    [questions]
+  );
+  const practiceClientState = useMemo(
+    () => ({
+      attemptId,
+      questionSetFingerprint,
+    }),
+    [attemptId, questionSetFingerprint]
+  );
+
   const persistDraft = useCallback(async (nextAnswers: Record<string, string>) => {
     const normalizedAnswers = normalizeDraftAnswersForQuestions(questions, nextAnswers);
     const serializedSnapshot = JSON.stringify(normalizedAnswers);
     if (serializedSnapshot === lastSavedSnapshotRef.current) {
       setDraftStatus("saved");
-      return;
+      return true;
     }
 
     setDraftStatus("saving");
@@ -82,16 +109,21 @@ export default function PracticeExamTaker({
         await previousSave;
       }
 
-      const result = await saveStudentPracticeDraft(practiceExamId, normalizedAnswers);
+      const result = await saveStudentPracticeDraft(
+        practiceExamId,
+        normalizedAnswers,
+        practiceClientState
+      );
       if ("error" in result) {
         setDraftStatus("error");
         setError(result.error ?? "Practice draft хадгалахад алдаа гарлаа.");
-        return;
+        return false;
       }
 
       lastSavedSnapshotRef.current = serializedSnapshot;
       setError(null);
       setDraftStatus("saved");
+      return true;
     })();
 
     const trackedPromise = savePromise.finally(() => {
@@ -101,8 +133,8 @@ export default function PracticeExamTaker({
     });
     savePromiseRef.current = trackedPromise;
 
-    await trackedPromise;
-  }, [practiceExamId, questions]);
+    return trackedPromise;
+  }, [practiceClientState, practiceExamId, questions]);
 
   const flushDraftSave = async () => {
     if (draftTimerRef.current) {
@@ -112,13 +144,14 @@ export default function PracticeExamTaker({
 
     const serializedAnswers = getSerializedDraftSnapshot(answers);
     if (serializedAnswers !== lastSavedSnapshotRef.current) {
-      await persistDraft(answers);
-      return;
+      return persistDraft(answers);
     }
 
     if (savePromiseRef.current) {
-      await savePromiseRef.current;
+      return savePromiseRef.current;
     }
+
+    return true;
   };
 
   useEffect(() => {
@@ -193,13 +226,20 @@ export default function PracticeExamTaker({
     });
   };
 
-  const handleSubmit = () => {
-    if (!window.confirm("Practice шалгалтаа илгээх үү?")) return;
-
+  const handleConfirmSubmit = () => {
+    setShowSubmitDialog(false);
     startTransition(async () => {
       setError(null);
-      await flushDraftSave();
-      const result = await submitStudentPracticeExam(practiceExamId, answers);
+      const draftSaved = await flushDraftSave();
+      if (!draftSaved) {
+        return;
+      }
+
+      const result = await submitStudentPracticeExam(
+        practiceExamId,
+        answers,
+        practiceClientState
+      );
       if ("error" in result) {
         setError(result.error ?? "Practice шалгалтыг илгээхэд алдаа гарлаа.");
         return;
@@ -209,8 +249,37 @@ export default function PracticeExamTaker({
     });
   };
 
+  const progressPct = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
+
   return (
     <div className="space-y-6">
+      <AlertDialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Practice дуусгах уу?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {answeredCount < questions.length && (
+                <span className="block mb-1 text-amber-600 font-medium">
+                  {questions.length - answeredCount} асуулт хариулагдаагүй байна.
+                </span>
+              )}
+              {hasEssayQuestions && (
+                <span className="block mb-1">
+                  Essay асуултын хариулт автоматаар дүнд тооцогдохгүй (0 оноо авна).
+                </span>
+              )}
+              Илгээсний дараа хариулт өөрчлөх боломжгүй.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Болих</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmSubmit}>
+              Илгээх
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <p className="text-sm font-medium text-[#4078C1]">{subjectName}</p>
@@ -231,6 +300,19 @@ export default function PracticeExamTaker({
                   ? "Draft алдаатай"
                   : "Draft бэлэн"}
           </Badge>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Явц</span>
+          <span>{progressPct}%</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100">
+          <div
+            className="h-full rounded-full bg-[#4078C1] transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
         </div>
       </div>
 
@@ -405,7 +487,11 @@ export default function PracticeExamTaker({
                 </Button>
               </div>
 
-              <Button type="button" disabled={isPending} onClick={handleSubmit}>
+              <Button
+                type="button"
+                disabled={isPending}
+                onClick={() => setShowSubmitDialog(true)}
+              >
                 {isPending ? "Илгээж байна..." : "Practice дуусгах"}
               </Button>
             </div>
