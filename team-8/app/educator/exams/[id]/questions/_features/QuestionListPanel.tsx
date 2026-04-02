@@ -10,6 +10,8 @@ interface Props {
   passages: QuestionPassage[];
   isLocked?: boolean;
   syncTargetId: string;
+  showHeading?: boolean;
+  syncHeight?: boolean;
 }
 
 export default function QuestionListPanel({
@@ -18,10 +20,17 @@ export default function QuestionListPanel({
   passages,
   isLocked = false,
   syncTargetId,
+  showHeading = true,
+  syncHeight = true,
 }: Props) {
   const [panelHeight, setPanelHeight] = useState<number | null>(null);
+  const hasQuestions = questions.length > 0;
 
   useEffect(() => {
+    if (!hasQuestions || !syncHeight) {
+      return;
+    }
+
     const target = document.getElementById(syncTargetId);
     const mediaQuery = window.matchMedia("(min-width: 1024px)");
 
@@ -51,25 +60,28 @@ export default function QuestionListPanel({
       window.removeEventListener("resize", updateHeight);
       mediaQuery.removeEventListener("change", updateHeight);
     };
-  }, [syncTargetId]);
+  }, [hasQuestions, syncHeight, syncTargetId]);
 
   return (
     <div
       className="lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden"
-      style={panelHeight ? { height: panelHeight } : undefined}
+      style={hasQuestions && syncHeight && panelHeight ? { height: panelHeight } : undefined}
     >
-      <div className="mb-4">
-        <h2 className="text-2xl font-semibold tracking-tight text-zinc-950">
-          Нэмсэн асуултууд
-        </h2>
-      </div>
+      {showHeading ? (
+        <div className="mb-4">
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-950">
+            Нэмсэн асуултууд
+          </h2>
+        </div>
+      ) : null}
 
       <QuestionList
-        className="min-h-0 flex-1"
+        className={showHeading ? "min-h-0 flex-1" : "min-h-0"}
         questions={questions}
         examId={examId}
         passages={passages}
         isLocked={isLocked}
+        showSummary={showHeading}
       />
     </div>
   );

@@ -1,14 +1,7 @@
 "use client";
 
 import { useState, type ClipboardEvent } from "react";
-import {
-  Check,
-  ChevronDown,
-  PlusCircle,
-  Sparkles,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Check, ChevronDown, Plus, PlusCircle, Sparkles, Trash2, X } from "lucide-react";
 import { addQuestion } from "@/lib/question/actions";
 import { parsePastedQuestionText } from "@/lib/question/paste";
 import MathContent from "@/components/math/MathContent";
@@ -28,14 +21,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type {
   AiQuestionVariantMode,
+  Question,
   QuestionPassage,
   QuestionType,
 } from "@/types";
 import QuestionImportActions from "./QuestionImportActions";
+import QuestionList from "./QuestionList";
 
 interface Props {
   examId: string;
   passages: QuestionPassage[];
+  questions?: Question[];
+  questionNumber?: number;
 }
 
 interface MatchingPair {
@@ -80,7 +77,12 @@ function buildSelectionOptions(options: string[]) {
     : [...options, ...Array.from({ length: 4 - options.length }, () => "")];
 }
 
-export default function AddQuestionForm({ examId, passages }: Props) {
+export default function AddQuestionForm({
+  examId,
+  passages,
+  questions = [],
+  questionNumber = 1,
+}: Props) {
   const [type, setType] = useState<QuestionType>("multiple_choice");
   const [isFormulaToolOpen, setIsFormulaToolOpen] = useState(false);
   const [activeFormulaTarget, setActiveFormulaTarget] = useState({
@@ -179,25 +181,6 @@ export default function AddQuestionForm({ examId, passages }: Props) {
     if (!didParse) return;
 
     event.preventDefault();
-  }
-
-  function addOption() {
-    setOptions((prev) => [...prev, ""]);
-  }
-
-  function removeOption(index: number) {
-    const removedValue = options[index];
-    const nextOptions = options.filter((_, optionIndex) => optionIndex !== index);
-
-    setOptions(nextOptions.length >= 2 ? nextOptions : [...nextOptions, ""]);
-
-    if (correctAnswer === removedValue) {
-      setCorrectAnswer("");
-    }
-
-    setMultipleCorrectAnswers((prev) =>
-      prev.filter((answer) => answer !== removedValue)
-    );
   }
 
   function updateOption(index: number, value: string) {
@@ -357,21 +340,29 @@ export default function AddQuestionForm({ examId, passages }: Props) {
   }
 
   return (
-    <div className="rounded-[28px] border border-zinc-200 bg-white p-6 shadow-[0_12px_40px_-18px_rgba(15,23,42,0.16)] md:p-8">
-      <form id="question-form" action={handleSubmit} className="space-y-6">
-        <QuestionImportActions
-          examId={examId}
-          aiVariantEnabled={aiVariantEnabled}
-          onAiVariantEnabledChange={setAiVariantEnabled}
-          aiVariantMode={aiVariantMode}
-          formulaToolOpen={isFormulaToolOpen}
-          onFormulaToolOpenChange={setIsFormulaToolOpen}
-        />
+    <div className="space-y-4">
+      <QuestionImportActions
+        examId={examId}
+        aiVariantEnabled={aiVariantEnabled}
+        onAiVariantEnabledChange={setAiVariantEnabled}
+        aiVariantMode={aiVariantMode}
+        formulaToolOpen={isFormulaToolOpen}
+        onFormulaToolOpenChange={setIsFormulaToolOpen}
+      />
 
-        <div className="text-zinc-950">
-          <h2 className="text-2xl font-semibold tracking-tight">Шинэ асуулт</h2>
-        </div>
+      <div className="mt-2 rounded-[28px] border border-[#D9E1EC] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.14)] md:mt-4 md:p-6">
+        {questions.length > 0 ? (
+          <div className="mb-6">
+            <QuestionList
+              questions={questions}
+              examId={examId}
+              passages={passages}
+              showSummary={false}
+            />
+          </div>
+        ) : null}
 
+        <form id="question-form" action={handleSubmit} className="space-y-6">
         {error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
@@ -384,14 +375,14 @@ export default function AddQuestionForm({ examId, passages }: Props) {
           </div>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_84px]">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_96px]">
           <div className="space-y-2.5">
-            <Label className="text-sm font-medium text-zinc-700">Төрөл</Label>
+            <Label className="text-[13px] font-semibold text-[#374151]">Төрөл</Label>
             <Select
               value={type}
               onValueChange={(value) => resetTypeState(value as QuestionType)}
             >
-              <SelectTrigger className="h-12 rounded-2xl border-zinc-200 bg-white px-4 text-sm shadow-none focus-visible:ring-zinc-200">
+              <SelectTrigger className="h-10 rounded-full border-[#E3E8EF] bg-[#F8FAFC] px-4 text-[12px] text-[#111827] shadow-none focus-visible:ring-[#D5E3F7]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="rounded-2xl border-zinc-200 bg-white">
@@ -407,21 +398,28 @@ export default function AddQuestionForm({ examId, passages }: Props) {
           <div className="space-y-2.5">
             <Label
               htmlFor="question-points"
-              className="text-sm font-medium text-zinc-700"
+              className="text-[13px] font-semibold text-[#374151]"
             >
               Оноо
             </Label>
-            <Input
-              id="question-points"
-              type="number"
-              min={1}
-              max={100}
-              value={points}
-              onChange={(event) =>
-                setPoints(Math.max(1, Number(event.target.value) || 1))
-              }
-              className="h-10 rounded-xl border-zinc-200 bg-white px-2.5 text-center text-sm tabular-nums shadow-none focus-visible:ring-zinc-200"
-            />
+            <Select
+              value={String(points)}
+              onValueChange={(value) => setPoints(Number(value))}
+            >
+              <SelectTrigger
+                id="question-points"
+                className="h-10 rounded-full border-[#ECECEC] bg-[#F2F2F2] px-3 text-center text-[12px] tabular-nums shadow-none focus-visible:ring-[#D5E3F7]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-2xl border-zinc-200 bg-white">
+                {Array.from({ length: 10 }, (_, index) => index + 1).map((point) => (
+                  <SelectItem key={point} value={String(point)}>
+                    {point}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -597,8 +595,11 @@ export default function AddQuestionForm({ examId, passages }: Props) {
         ) : null}
 
         <div className="space-y-2.5">
-          <Label htmlFor="content" className="text-sm font-medium text-zinc-700">
-            Асуулт
+          <Label
+            htmlFor="content"
+            className="text-[24px] font-medium leading-none text-[#1F2937]"
+          >
+            Асуулт ({questionNumber})
           </Label>
           <Textarea
             id="content"
@@ -612,10 +613,10 @@ export default function AddQuestionForm({ examId, passages }: Props) {
                 label: "Асуулт",
               })
             }
-            placeholder={"Асуултаа энд бичнэ үү...\nЖишээ: \\frac{a+b}{c} эсвэл $\\frac{a+b}{c}$"}
+            placeholder={"Асуултаа энд бичнэ үү."}
             rows={4}
             required
-            className="min-h-[180px] rounded-[24px] border-zinc-200 bg-white px-4 py-3 text-base leading-7 shadow-none focus-visible:ring-zinc-200"
+            className="min-h-[140px] rounded-[12px] border-[#E5E7EB] bg-white px-4 py-3 text-[13px] leading-6 shadow-none focus-visible:ring-[#D5E3F7]"
           />
         </div>
 
@@ -639,14 +640,11 @@ export default function AddQuestionForm({ examId, passages }: Props) {
         ) : null}
 
         {isSelectionType ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Label className="text-sm font-medium text-zinc-700">
-                Хариултууд
+          <div className="space-y-3 rounded-[20px] border border-[#E2E8F0] bg-white px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+            <div className="space-y-1">
+              <Label className="text-[13px] font-semibold text-[#4B5563]">
+                Хариултууд <span className="font-normal text-[#6B7280]">(Зөв хариултыг сонгоно уу)</span>
               </Label>
-              <span className="text-sm text-zinc-400">
-                (Зөв хариултыг сонгоно уу)
-              </span>
             </div>
 
             {options.map((option, index) => {
@@ -656,14 +654,16 @@ export default function AddQuestionForm({ examId, passages }: Props) {
                   : multipleCorrectAnswers.includes(option) &&
                     option.trim() !== "";
 
+              const optionLetter = String.fromCharCode(65 + index);
+
               return (
                 <div
                   key={index}
                   className={cn(
-                    "flex items-center gap-3 rounded-2xl border px-3 py-2 transition-colors",
+                    "flex items-center gap-3 rounded-[10px] px-3 py-2 transition-colors",
                     isSelected
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-zinc-200 bg-white"
+                      ? "bg-[#F8FCF8]"
+                      : "bg-transparent"
                   )}
                 >
                   <button
@@ -675,15 +675,19 @@ export default function AddQuestionForm({ examId, passages }: Props) {
                     }
                     disabled={!option.trim()}
                     className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors",
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition-colors",
                       isSelected
-                        ? "border-emerald-500 bg-emerald-500 text-white"
-                        : "border-zinc-300 bg-white text-transparent",
+                        ? "border-[#7BC67E] bg-[#7BC67E] text-[#7BC67E]"
+                        : "border-[#6B7280] bg-white text-transparent",
                       !option.trim() && "cursor-not-allowed opacity-60"
                     )}
                   >
-                    <Check className="h-4 w-4" />
+                    <Check className="h-3 w-3 text-white" />
                   </button>
+
+                  <span className="w-5 shrink-0 text-[13px] font-medium text-[#4B5563]">
+                    {optionLetter}.
+                  </span>
 
                   <Input
                     id={`option-${index}`}
@@ -695,33 +699,17 @@ export default function AddQuestionForm({ examId, passages }: Props) {
                         label: `Хариулт ${index + 1}`,
                       })
                     }
-                    placeholder={`Хариулт ${index + 1}`}
-                    className="h-10 border-none bg-transparent px-0 text-base shadow-none focus-visible:ring-0"
+                    placeholder="Хариултаа оруулна уу."
+                    className="h-8 rounded-[6px] border-none bg-[#F3F4F6] px-3 text-[12px] text-[#374151] shadow-none focus-visible:ring-0"
                   />
 
-                  {options.length > 2 ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="shrink-0 text-zinc-400 hover:text-zinc-950"
-                      onClick={() => removeOption(index)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  ) : null}
                 </div>
               );
             })}
 
-            <button
-              type="button"
-              onClick={addOption}
-              className="inline-flex items-center gap-2 text-sm font-medium text-zinc-600 transition-colors hover:text-zinc-950"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Хариулт нэмэх
-            </button>
+            <p className="text-[12px] font-medium text-[#374151]">
+              Зөв хариулттай товчоо сонгоно уу.
+            </p>
           </div>
         ) : null}
 
@@ -824,11 +812,13 @@ export default function AddQuestionForm({ examId, passages }: Props) {
         <Button
           type="submit"
           disabled={loading}
-          className="h-12 w-full rounded-2xl bg-zinc-900 text-base font-medium text-white hover:bg-zinc-800"
+          className="mt-4 h-12 w-full rounded-[12px] border border-[#D5D9E2] bg-white text-[14px] font-semibold text-[#374151] shadow-[0_2px_8px_rgba(15,23,42,0.08)] hover:bg-[#F8FAFC]"
         >
+          <Plus className="mr-2 h-4 w-4" />
           {loading ? "Асуулт нэмж байна..." : "Асуулт нэмэх"}
         </Button>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
