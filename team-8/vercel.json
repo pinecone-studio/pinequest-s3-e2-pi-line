@@ -1,14 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/student-learning/process",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/exam-results/process",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/notifications/weekly-parent-digest",
       "schedule": "0 0 * * 1"
     }

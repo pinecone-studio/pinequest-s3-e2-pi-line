@@ -223,11 +223,19 @@ type MasteryRefreshQueueRow = {
   updated_at: string;
 };
 
+type ProcessCurrentStudentLearningWorkResult = {
+  processed: boolean;
+  kind: "none" | "mastery" | "study_plan" | "practice_build";
+  status: "idle" | "processed" | "claimed_elsewhere" | "error";
+  error?: string;
+};
+
 const FULL_MASTERY_REFRESH_SCOPE_KEY = "__all__";
 const DEFAULT_MASTERY_REFRESH_BATCH_SIZE = 10;
 const DEFAULT_STUDY_PLAN_BATCH_SIZE = 2;
 const DEFAULT_PRACTICE_BUILD_BATCH_SIZE = 2;
 const MAX_MASTERY_REFRESH_BACKOFF_MINUTES = 30;
+const STALE_MASTERY_PROCESSING_MS = 2 * 60 * 1000;
 
 function scheduleStudentLearningProcessing() {
   try {
@@ -613,6 +621,179 @@ export async function enqueueStudentTopicMasteryRefresh(
   return result;
 }
 
+function getMasteryRefreshCandidateSelect() {
+  return "id, student_id, subject_id, scope_key, status, attempts, next_run_at, last_error, created_at, updated_at";
+}
+
+async function reclaimStaleStudentMasteryRefreshJobs(
+  admin: SupabaseAdminClient,
+  studentId: string,
+  subjectId?: string
+) {
+  const staleBefore = new Date(
+    Date.now() - STALE_MASTERY_PROCESSING_MS
+  ).toISOString();
+  let query = admin
+    .from("student_mastery_refresh_queue")
+    .select(getMasteryRefreshCandidateSelect())
+    .eq("student_id", studentId)
+    .eq("status", "processing")
+    .lte("updated_at", staleBefore)
+    .order("updated_at", { ascending: true })
+    .limit(5);
+
+  if (subjectId) {
+    query = query.in("scope_key", [
+      FULL_MASTERY_REFRESH_SCOPE_KEY,
+      getMasteryRefreshScopeKey(subjectId),
+    ]);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const reclaimedIds: string[] = [];
+  for (const row of ((data ?? []) as unknown as MasteryRefreshQueueRow[])) {
+    const { data: reclaimed, error: updateError } = await admin
+      .from("student_mastery_refresh_queue")
+      .update({
+        status: "pending",
+        next_run_at: new Date().toISOString(),
+        last_error: "Recovered stale mastery refresh job.",
+      })
+      .eq("id", row.id)
+      .eq("status", "processing")
+      .eq("attempts", row.attempts)
+      .eq("updated_at", row.updated_at)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    if (reclaimed?.id) {
+      reclaimedIds.push(String(reclaimed.id));
+    }
+  }
+
+  return reclaimedIds;
+}
+
+async function listStudentMasteryRefreshCandidates(
+  admin: SupabaseAdminClient,
+  studentId: string,
+  subjectId?: string
+) {
+  await reclaimStaleStudentMasteryRefreshJobs(admin, studentId, subjectId);
+
+  const fetchRows = async (preferredOnly: boolean) => {
+    let query = admin
+      .from("student_mastery_refresh_queue")
+      .select(getMasteryRefreshCandidateSelect())
+      .eq("student_id", studentId)
+      .eq("status", "pending")
+      .lte("next_run_at", new Date().toISOString())
+      .order("next_run_at", { ascending: true })
+      .order("created_at", { ascending: true })
+      .limit(5);
+
+    if (preferredOnly && subjectId) {
+      query = query.in("scope_key", [
+        FULL_MASTERY_REFRESH_SCOPE_KEY,
+        getMasteryRefreshScopeKey(subjectId),
+      ]);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data ?? []) as unknown as MasteryRefreshQueueRow[];
+  };
+
+  if (!subjectId) {
+    return fetchRows(false);
+  }
+
+  const preferredRows = await fetchRows(true);
+  if (preferredRows.length > 0) {
+    return preferredRows;
+  }
+
+  return fetchRows(false);
+}
+
+async function claimStudentMasteryRefreshJob(
+  admin: SupabaseAdminClient,
+  row: MasteryRefreshQueueRow
+) {
+  const { data, error } = await admin
+    .from("student_mastery_refresh_queue")
+    .update({
+      status: "processing",
+      attempts: Number(row.attempts ?? 0) + 1,
+      last_error: null,
+    })
+    .eq("id", row.id)
+    .eq("status", "pending")
+    .eq("attempts", row.attempts)
+    .eq("updated_at", row.updated_at)
+    .select(getMasteryRefreshCandidateSelect())
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as MasteryRefreshQueueRow | null) ?? null;
+}
+
+async function processClaimedMasteryRefreshJob(
+  admin: SupabaseAdminClient,
+  job: MasteryRefreshQueueRow
+) {
+  try {
+    await recomputeStudentTopicMastery(job.student_id, job.subject_id ?? undefined);
+
+    const { error: deleteError } = await admin
+      .from("student_mastery_refresh_queue")
+      .delete()
+      .eq("id", job.id);
+
+    if (deleteError) {
+      throw new Error(deleteError.message);
+    }
+
+    return { success: true as const };
+  } catch (queueError) {
+    const errorMessage =
+      queueError instanceof Error ? queueError.message : "unknown_error";
+    const nextRunAt = new Date(
+      Date.now() + getMasteryRefreshBackoffMinutes(job.attempts) * 60 * 1000
+    ).toISOString();
+    const { error: updateError } = await admin
+      .from("student_mastery_refresh_queue")
+      .update({
+        status: "pending",
+        next_run_at: nextRunAt,
+        last_error: errorMessage,
+      })
+      .eq("id", job.id);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    return { success: false as const, error: errorMessage };
+  }
+}
+
 export async function processPendingStudentMasteryRefreshJobs(
   batchSize = DEFAULT_MASTERY_REFRESH_BATCH_SIZE
 ) {
@@ -634,37 +815,11 @@ export async function processPendingStudentMasteryRefreshJobs(
   for (const job of jobs) {
     processed += 1;
 
-    try {
-      await recomputeStudentTopicMastery(job.student_id, job.subject_id ?? undefined);
-
-      const { error: deleteError } = await admin
-        .from("student_mastery_refresh_queue")
-        .delete()
-        .eq("id", job.id);
-
-      if (deleteError) {
-        throw new Error(deleteError.message);
-      }
-
+    const result = await processClaimedMasteryRefreshJob(admin, job);
+    if (result.success) {
       succeeded += 1;
-    } catch (queueError) {
+    } else {
       failed += 1;
-      const nextRunAt = new Date(
-        Date.now() + getMasteryRefreshBackoffMinutes(job.attempts) * 60 * 1000
-      ).toISOString();
-      const { error: updateError } = await admin
-        .from("student_mastery_refresh_queue")
-        .update({
-          status: "pending",
-          next_run_at: nextRunAt,
-          last_error:
-            queueError instanceof Error ? queueError.message : "unknown_error",
-        })
-        .eq("id", job.id);
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
     }
   }
 
@@ -2232,6 +2387,65 @@ async function claimPendingStudyPlanJob(
   return Boolean(data);
 }
 
+async function processClaimedStudyPlanJob(
+  admin: SupabaseAdminClient,
+  row: StudyPlanJobRow
+) {
+  try {
+    const overview = await getLearningOverviewForStudent(row.student_id);
+    const subjectLearning = getSubjectLearningFromOverview(overview, row.subject_id);
+    const masteryUpdatedAt = overview.subjectUpdatedAtById.get(row.subject_id) ?? null;
+
+    if (!subjectLearning || !masteryUpdatedAt) {
+      throw new Error("Study plan үүсгэх mastery өгөгдөл алга.");
+    }
+
+    const plan = await generateStudyPlanWithAI({
+      subjectName: subjectLearning.subject.subject_name,
+      weakTopics: subjectLearning.topics,
+      subjectSummary: subjectLearning.subject,
+    });
+
+    const { error: updateError } = await admin
+      .from("student_subject_study_plans")
+      .update({
+        mastery_updated_at: masteryUpdatedAt,
+        pending_mastery_updated_at: masteryUpdatedAt,
+        plan_json: plan,
+        generated_at: new Date().toISOString(),
+        status: "ready",
+        last_error: null,
+      })
+      .eq("student_id", row.student_id)
+      .eq("subject_id", row.subject_id);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    return { success: true as const };
+  } catch (planError) {
+    const errorMessage =
+      planError instanceof Error
+        ? planError.message
+        : "study_plan_generation_failed";
+    const { error: updateError } = await admin
+      .from("student_subject_study_plans")
+      .update({
+        status: "failed",
+        last_error: errorMessage,
+      })
+      .eq("student_id", row.student_id)
+      .eq("subject_id", row.subject_id);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    return { success: false as const, error: errorMessage };
+  }
+}
+
 async function processPendingStudentStudyPlanJobs(limit = DEFAULT_STUDY_PLAN_BATCH_SIZE) {
   const admin = createAdminClient();
   const safeLimit = Math.max(1, Math.min(Number(limit || 0), 10));
@@ -2258,54 +2472,11 @@ async function processPendingStudentStudyPlanJobs(limit = DEFAULT_STUDY_PLAN_BAT
 
     processed += 1;
 
-    try {
-      const overview = await getLearningOverviewForStudent(row.student_id);
-      const subjectLearning = getSubjectLearningFromOverview(overview, row.subject_id);
-      const masteryUpdatedAt = overview.subjectUpdatedAtById.get(row.subject_id) ?? null;
-
-      if (!subjectLearning || !masteryUpdatedAt) {
-        throw new Error("Study plan үүсгэх mastery өгөгдөл алга.");
-      }
-
-      const plan = await generateStudyPlanWithAI({
-        subjectName: subjectLearning.subject.subject_name,
-        weakTopics: subjectLearning.topics,
-        subjectSummary: subjectLearning.subject,
-      });
-
-      const { error: updateError } = await admin
-        .from("student_subject_study_plans")
-        .update({
-          mastery_updated_at: masteryUpdatedAt,
-          pending_mastery_updated_at: masteryUpdatedAt,
-          plan_json: plan,
-          generated_at: new Date().toISOString(),
-          status: "ready",
-          last_error: null,
-        })
-        .eq("student_id", row.student_id)
-        .eq("subject_id", row.subject_id);
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
-
+    const result = await processClaimedStudyPlanJob(admin, row);
+    if (result.success) {
       succeeded += 1;
-    } catch (planError) {
+    } else {
       failed += 1;
-      const { error: updateError } = await admin
-        .from("student_subject_study_plans")
-        .update({
-          status: "failed",
-          last_error:
-            planError instanceof Error ? planError.message : "study_plan_generation_failed",
-        })
-        .eq("student_id", row.student_id)
-        .eq("subject_id", row.subject_id);
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
     }
   }
 
@@ -2358,6 +2529,142 @@ async function markPracticeBuildFailed(
   }
 }
 
+async function processClaimedPracticeBuildJob(
+  admin: SupabaseAdminClient,
+  practiceExam: QueuedPracticeExamRow
+) {
+  try {
+    const selectedTopicsSnapshot = getPracticeTopicSnapshotFromMetadata(
+      practiceExam.generated_metadata
+    );
+    const fallbackTopics = Array.isArray(practiceExam.selected_topics)
+      ? parsePracticeTopicSnapshot(
+          practiceExam.selected_topics
+            .map((topic) => {
+              if (!topic || typeof topic !== "object") return null;
+              const raw = topic as Record<string, unknown>;
+              return {
+                subject_id: practiceExam.subject_id,
+                subject_name:
+                  getRelationObject(practiceExam.subjects)?.name ?? "Хичээл",
+                topic_key: raw.topic_key,
+                topic_label: raw.topic_label,
+                mastery_score: 0,
+                official_question_count: 0,
+                practice_question_count: 0,
+                official_percentage: null,
+                practice_percentage: null,
+              };
+            })
+            .filter(Boolean)
+        )
+      : [];
+    const selectedTopics =
+      selectedTopicsSnapshot.length > 0 ? selectedTopicsSnapshot : fallbackTopics;
+
+    if (selectedTopics.length === 0) {
+      throw new Error("Practice бэлтгэх topic snapshot олдсонгүй.");
+    }
+
+    const requestedQuestionCount = Math.max(
+      1,
+      Math.min(
+        Number(
+          practiceExam.generated_metadata?.requested_question_count ??
+            DEFAULT_PRACTICE_QUESTION_COUNT
+        ),
+        DEFAULT_PRACTICE_QUESTION_COUNT
+      )
+    );
+    const gradeLevel =
+      typeof practiceExam.generated_metadata?.grade_level === "number"
+        ? Number(practiceExam.generated_metadata.grade_level)
+        : await getStudentGradeLevel(admin, practiceExam.student_id);
+    const subjectName =
+      getRelationObject(practiceExam.subjects)?.name ??
+      selectedTopics[0]?.subject_name ??
+      "Хичээл";
+
+    const bankCandidates = await loadBankCandidates(admin, {
+      subjectId: practiceExam.subject_id,
+      gradeLevel,
+      selectedTopics,
+    });
+
+    const selectedBankQuestions = pickBalancedBankQuestions(
+      bankCandidates,
+      selectedTopics,
+      requestedQuestionCount
+    );
+
+    let aiQuestions: Array<{
+      sourceType: "ai";
+      sourceQuestionBankId: null;
+      topicKey: string;
+      subtopic: string;
+      type: QuestionType;
+      content: string;
+      contentHtml: null;
+      imageUrl: null;
+      options: string[] | null;
+      correctAnswer: string | null;
+      points: number;
+      explanation: string | null;
+    }> = [];
+
+    if (selectedBankQuestions.length < requestedQuestionCount) {
+      try {
+        aiQuestions = await generatePracticeQuestionsWithAI({
+          subjectName,
+          gradeLevel,
+          topics: selectedTopics,
+          questionCount: requestedQuestionCount - selectedBankQuestions.length,
+        });
+      } catch (aiError) {
+        if (selectedBankQuestions.length === 0) {
+          throw aiError;
+        }
+      }
+    }
+
+    const finalQuestions = [...selectedBankQuestions, ...aiQuestions].slice(
+      0,
+      requestedQuestionCount
+    );
+
+    if (finalQuestions.length === 0) {
+      throw new Error("Practice асуулт үүсгэж чадсангүй.");
+    }
+
+    const { error: finalizeError } = await admin.rpc(
+      "finalize_student_practice_exam_build",
+      {
+        p_practice_exam_id: practiceExam.id,
+        p_questions: createPracticeQuestionRows(practiceExam.subject_id, finalQuestions),
+        p_generated_metadata: {
+          bank_question_count: selectedBankQuestions.length,
+          ai_question_count: Math.max(
+            finalQuestions.length - selectedBankQuestions.length,
+            0
+          ),
+          grade_level: gradeLevel,
+        },
+      }
+    );
+
+    if (finalizeError) {
+      throw new Error(finalizeError.message);
+    }
+
+    return { success: true as const };
+  } catch (buildError) {
+    const errorMessage =
+      buildError instanceof Error ? buildError.message : "practice_build_failed";
+    await markPracticeBuildFailed(admin, practiceExam.id, errorMessage);
+    return { success: false as const, error: errorMessage };
+  }
+}
+
 async function processPendingPracticeBuildJobs(limit = DEFAULT_PRACTICE_BUILD_BATCH_SIZE) {
   const admin = createAdminClient();
   const safeLimit = Math.max(1, Math.min(Number(limit || 0), 10));
@@ -2384,132 +2691,11 @@ async function processPendingPracticeBuildJobs(limit = DEFAULT_PRACTICE_BUILD_BA
 
     processed += 1;
 
-    try {
-      const selectedTopicsSnapshot = getPracticeTopicSnapshotFromMetadata(
-        practiceExam.generated_metadata
-      );
-      const fallbackTopics = Array.isArray(practiceExam.selected_topics)
-        ? parsePracticeTopicSnapshot(
-            practiceExam.selected_topics.map((topic) => {
-              if (!topic || typeof topic !== "object") return null;
-              const raw = topic as Record<string, unknown>;
-              return {
-                subject_id: practiceExam.subject_id,
-                subject_name:
-                  getRelationObject(practiceExam.subjects)?.name ?? "Хичээл",
-                topic_key: raw.topic_key,
-                topic_label: raw.topic_label,
-                mastery_score: 0,
-                official_question_count: 0,
-                practice_question_count: 0,
-                official_percentage: null,
-                practice_percentage: null,
-              };
-            }).filter(Boolean)
-          )
-        : [];
-      const selectedTopics =
-        selectedTopicsSnapshot.length > 0 ? selectedTopicsSnapshot : fallbackTopics;
-
-      if (selectedTopics.length === 0) {
-        throw new Error("Practice бэлтгэх topic snapshot олдсонгүй.");
-      }
-
-      const requestedQuestionCount = Math.max(
-        1,
-        Math.min(
-          Number(practiceExam.generated_metadata?.requested_question_count ?? DEFAULT_PRACTICE_QUESTION_COUNT),
-          DEFAULT_PRACTICE_QUESTION_COUNT
-        )
-      );
-      const gradeLevel =
-        typeof practiceExam.generated_metadata?.grade_level === "number"
-          ? Number(practiceExam.generated_metadata.grade_level)
-          : await getStudentGradeLevel(admin, practiceExam.student_id);
-      const subjectName =
-        getRelationObject(practiceExam.subjects)?.name ??
-        selectedTopics[0]?.subject_name ??
-        "Хичээл";
-
-      const bankCandidates = await loadBankCandidates(admin, {
-        subjectId: practiceExam.subject_id,
-        gradeLevel,
-        selectedTopics,
-      });
-
-      const selectedBankQuestions = pickBalancedBankQuestions(
-        bankCandidates,
-        selectedTopics,
-        requestedQuestionCount
-      );
-
-      let aiQuestions: Array<{
-        sourceType: "ai";
-        sourceQuestionBankId: null;
-        topicKey: string;
-        subtopic: string;
-        type: QuestionType;
-        content: string;
-        contentHtml: null;
-        imageUrl: null;
-        options: string[] | null;
-        correctAnswer: string | null;
-        points: number;
-        explanation: string | null;
-      }> = [];
-
-      if (selectedBankQuestions.length < requestedQuestionCount) {
-        try {
-          aiQuestions = await generatePracticeQuestionsWithAI({
-            subjectName,
-            gradeLevel,
-            topics: selectedTopics,
-            questionCount: requestedQuestionCount - selectedBankQuestions.length,
-          });
-        } catch (aiError) {
-          if (selectedBankQuestions.length === 0) {
-            throw aiError;
-          }
-        }
-      }
-
-      const finalQuestions = [...selectedBankQuestions, ...aiQuestions].slice(
-        0,
-        requestedQuestionCount
-      );
-
-      if (finalQuestions.length === 0) {
-        throw new Error("Practice асуулт үүсгэж чадсангүй.");
-      }
-
-      const { error: finalizeError } = await admin.rpc(
-        "finalize_student_practice_exam_build",
-        {
-          p_practice_exam_id: practiceExam.id,
-          p_questions: createPracticeQuestionRows(practiceExam.subject_id, finalQuestions),
-          p_generated_metadata: {
-            bank_question_count: selectedBankQuestions.length,
-            ai_question_count: Math.max(
-              finalQuestions.length - selectedBankQuestions.length,
-              0
-            ),
-            grade_level: gradeLevel,
-          },
-        }
-      );
-
-      if (finalizeError) {
-        throw new Error(finalizeError.message);
-      }
-
+    const result = await processClaimedPracticeBuildJob(admin, practiceExam);
+    if (result.success) {
       succeeded += 1;
-    } catch (buildError) {
+    } else {
       failed += 1;
-      await markPracticeBuildFailed(
-        admin,
-        practiceExam.id,
-        buildError instanceof Error ? buildError.message : "practice_build_failed"
-      );
     }
   }
 
@@ -2530,6 +2716,216 @@ export async function processPendingStudentLearningJobs(options?: {
     studyPlans,
     practiceBuilds,
   };
+}
+
+function revalidateStudentLearningViews(practiceExamId?: string) {
+  revalidatePath("/student");
+  revalidatePath("/student/learning");
+
+  if (practiceExamId) {
+    revalidatePath(`/student/learning/practice/${practiceExamId}`);
+  }
+}
+
+async function listStudentStudyPlanCandidates(
+  admin: SupabaseAdminClient,
+  studentId: string,
+  subjectId?: string
+) {
+  let query = admin
+    .from("student_subject_study_plans")
+    .select(
+      "student_id, subject_id, mastery_updated_at, pending_mastery_updated_at, plan_json, generated_at, requested_at, status, last_error, subjects(name)"
+    )
+    .eq("student_id", studentId)
+    .eq("status", "pending")
+    .order("requested_at", { ascending: true })
+    .limit(5);
+
+  if (subjectId) {
+    query = query.eq("subject_id", subjectId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as StudyPlanJobRow[];
+}
+
+async function listStudentPracticeBuildCandidates(
+  admin: SupabaseAdminClient,
+  studentId: string,
+  practiceExamId?: string
+) {
+  let query = admin
+    .from("student_practice_exams")
+    .select(
+      "id, student_id, subject_id, title, description, selected_topics, generated_metadata, build_requested_at, status, build_error, subjects(name)"
+    )
+    .eq("student_id", studentId)
+    .eq("status", "building")
+    .order("build_requested_at", { ascending: true })
+    .limit(practiceExamId ? 1 : 5);
+
+  if (practiceExamId) {
+    query = query.eq("id", practiceExamId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as QueuedPracticeExamRow[];
+}
+
+export async function processCurrentStudentLearningWork(input: {
+  subjectId?: string;
+  practiceExamId?: string;
+}): Promise<ProcessCurrentStudentLearningWorkResult> {
+  const context = await getAuthenticatedStudentContext();
+  if ("error" in context) {
+    return {
+      processed: false,
+      kind: "none",
+      status: "error",
+      error: context.error,
+    };
+  }
+
+  const admin = createAdminClient();
+
+  try {
+    if (input.practiceExamId) {
+      const practiceCandidates = await listStudentPracticeBuildCandidates(
+        admin,
+        context.userId,
+        input.practiceExamId
+      );
+
+      for (const practiceCandidate of practiceCandidates) {
+        const claimed = await claimPendingPracticeBuild(admin, practiceCandidate);
+        if (!claimed) {
+          continue;
+        }
+
+        const result = await processClaimedPracticeBuildJob(admin, practiceCandidate);
+        revalidateStudentLearningViews(practiceCandidate.id);
+
+        return result.success
+          ? {
+              processed: true,
+              kind: "practice_build",
+              status: "processed",
+            }
+          : {
+              processed: false,
+              kind: "practice_build",
+              status: "error",
+              error: result.error,
+            };
+      }
+
+      if (practiceCandidates.length > 0) {
+        return {
+          processed: false,
+          kind: "practice_build",
+          status: "claimed_elsewhere",
+        };
+      }
+    }
+
+    const masteryCandidates = await listStudentMasteryRefreshCandidates(
+      admin,
+      context.userId,
+      input.subjectId
+    );
+
+    for (const masteryCandidate of masteryCandidates) {
+      const claimed = await claimStudentMasteryRefreshJob(admin, masteryCandidate);
+      if (!claimed) {
+        continue;
+      }
+
+      const result = await processClaimedMasteryRefreshJob(admin, claimed);
+      revalidateStudentLearningViews(input.practiceExamId);
+
+      return result.success
+        ? {
+            processed: true,
+            kind: "mastery",
+            status: "processed",
+          }
+        : {
+            processed: false,
+            kind: "mastery",
+            status: "error",
+            error: result.error,
+          };
+    }
+
+    if (masteryCandidates.length > 0) {
+      return {
+        processed: false,
+        kind: "mastery",
+        status: "claimed_elsewhere",
+      };
+    }
+
+    const studyPlanCandidates = await listStudentStudyPlanCandidates(
+      admin,
+      context.userId,
+      input.subjectId
+    );
+
+    for (const studyPlanCandidate of studyPlanCandidates) {
+      const claimed = await claimPendingStudyPlanJob(admin, studyPlanCandidate);
+      if (!claimed) {
+        continue;
+      }
+
+      const result = await processClaimedStudyPlanJob(admin, studyPlanCandidate);
+      revalidateStudentLearningViews(input.practiceExamId);
+
+      return result.success
+        ? {
+            processed: true,
+            kind: "study_plan",
+            status: "processed",
+          }
+        : {
+            processed: false,
+            kind: "study_plan",
+            status: "error",
+            error: result.error,
+          };
+    }
+
+    if (studyPlanCandidates.length > 0) {
+      return {
+        processed: false,
+        kind: "study_plan",
+        status: "claimed_elsewhere",
+      };
+    }
+
+    return {
+      processed: false,
+      kind: "none",
+      status: "idle",
+    };
+  } catch (error) {
+    return {
+      processed: false,
+      kind: "none",
+      status: "error",
+      error: error instanceof Error ? error.message : "unknown_error",
+    };
+  }
 }
 
 async function getStudentPracticeExamBase(

@@ -1,28 +1,27 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { processCurrentStudentLearningWork } from "@/lib/student-learning/actions";
+import { useActionRefreshLoop } from "../../_features/useActionRefreshLoop";
 
 export default function LearningAutoRefresh({
   active,
-  intervalMs = 4000,
+  subjectId,
+  intervalMs = 6000,
 }: {
   active: boolean;
+  subjectId?: string | null;
   intervalMs?: number;
 }) {
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!active) return;
-
-    const intervalId = window.setInterval(() => {
-      router.refresh();
-    }, intervalMs);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [active, intervalMs, router]);
+  useActionRefreshLoop({
+    active,
+    intervalMs,
+    label: "LearningAutoRefresh",
+    onTick: async () => {
+      await processCurrentStudentLearningWork(
+        subjectId ? { subjectId } : {}
+      );
+    },
+  });
 
   return null;
 }
