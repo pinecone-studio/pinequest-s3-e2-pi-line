@@ -37,6 +37,7 @@ export default async function StudentLearningPage({
   }
 
   const { overview, selectedSubject, studyPlan: studyPlanState } = pageData;
+  const studyPlanResult = studyPlanState && !("error" in studyPlanState) ? studyPlanState : null;
 
   if (overview.subjects.length === 0) {
     return (
@@ -78,21 +79,13 @@ export default async function StudentLearningPage({
 
   const selectedSubjectId = overview.selectedSubjectId;
   const subjectLearning = selectedSubject;
-  const plan = studyPlanState && !("error" in studyPlanState) ? studyPlanState.plan : null;
-  const isStale =
-    studyPlanState && !("error" in studyPlanState) ? studyPlanState.isStale : false;
+  const plan = studyPlanResult?.plan ?? null;
+  const isStale = studyPlanResult?.isStale ?? false;
 
   return (
     <div className="space-y-6 pb-10">
       <LearningAutoRefresh
-        active={
-          Boolean(overview.isRefreshing) ||
-          Boolean(
-            studyPlanState &&
-              !("error" in studyPlanState) &&
-              studyPlanState.status === "pending"
-          )
-        }
+        active={Boolean(overview.isRefreshing) || studyPlanResult?.status === "pending"}
         subjectId={selectedSubjectId}
       />
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -129,9 +122,11 @@ export default async function StudentLearningPage({
                   <div>
                     <p className="text-base font-semibold text-zinc-900">{subject.subject_name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {subject.weak_topic_count > 0
-                        ? `${subject.weak_topic_count} weak topic`
-                        : "Topic summary pending"}
+                      {subject.needs_topic_backfill
+                        ? "Topic summary pending"
+                        : subject.weak_topic_count > 0
+                          ? `${subject.weak_topic_count} сул сэдэв`
+                          : "Сул сэдэв алга"}
                     </p>
                   </div>
                   <Badge variant={subject.mastery_score < 60 ? "secondary" : "outline"}>
@@ -214,19 +209,10 @@ export default async function StudentLearningPage({
           subjectId={selectedSubjectId}
           plan={plan}
           isStale={isStale}
-          status={
-            studyPlanState && !("error" in studyPlanState)
-              ? studyPlanState.status
-              : "idle"
-          }
-          lastError={
-            studyPlanState && !("error" in studyPlanState)
-              ? studyPlanState.lastError
-              : null
-          }
+          status={studyPlanResult?.status ?? "idle"}
+          lastError={studyPlanResult?.lastError ?? null}
           isRefreshing={
-            Boolean(subjectLearning.isRefreshing) ||
-            Boolean(studyPlanState && !("error" in studyPlanState) && studyPlanState.isRefreshing)
+            Boolean(subjectLearning.isRefreshing) || Boolean(studyPlanResult?.isRefreshing)
           }
           disabled={subjectLearning.topics.length === 0}
         />

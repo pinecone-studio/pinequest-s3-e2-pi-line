@@ -54,12 +54,19 @@ export default function PracticeBuilder({
   );
   const [selectedTopicKeys, setSelectedTopicKeys] = useState<string[]>(defaultSelection);
 
+  const allTopicKeys = useMemo(() => topics.map((t) => t.topic_key), [topics]);
+  const allSelected = selectedTopicKeys.length === allTopicKeys.length;
+
   const toggleTopic = (topicKey: string) => {
     setSelectedTopicKeys((current) =>
       current.includes(topicKey)
         ? current.filter((value) => value !== topicKey)
         : [...current, topicKey]
     );
+  };
+
+  const handleSelectAll = () => {
+    setSelectedTopicKeys(allSelected ? [] : allTopicKeys);
   };
 
   const handleCreatePractice = () => {
@@ -111,7 +118,21 @@ export default function PracticeBuilder({
           </div>
         ) : (
           <div className="mt-4 space-y-3">
-            <p className="text-sm font-medium text-zinc-900">Practice-д оруулах сэдвүүд</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-zinc-900">
+                Practice-д оруулах сэдвүүд{" "}
+                <span className="font-normal text-muted-foreground">
+                  ({selectedTopicKeys.length}/{allTopicKeys.length})
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="text-xs text-[#4078C1] hover:underline"
+              >
+                {allSelected ? "Болиулах" : "Бүгдийг сонгох"}
+              </button>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
               {topics.map((topic) => {
                 const isSelected = selectedTopicKeys.includes(topic.topic_key);
@@ -186,7 +207,7 @@ export default function PracticeBuilder({
                       item.status === "graded"
                         ? "secondary"
                         : item.status === "failed"
-                          ? "outline"
+                          ? "destructive"
                           : "outline"
                     }
                   >

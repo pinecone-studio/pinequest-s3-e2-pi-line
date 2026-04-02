@@ -115,8 +115,8 @@ export default function StudyPlanPanel({
             <div className="rounded-xl border p-4">
               <p className="text-sm font-semibold text-zinc-900">Эхний анхаарах зүйлс</p>
               <ul className="mt-3 space-y-2 text-sm text-zinc-700">
-                {plan.priorities.map((item) => (
-                  <li key={item} className="rounded-lg bg-zinc-50 px-3 py-2">
+                {plan.priorities.map((item, index) => (
+                  <li key={index} className="rounded-lg bg-zinc-50 px-3 py-2">
                     {item}
                   </li>
                 ))}
@@ -126,8 +126,8 @@ export default function StudyPlanPanel({
             <div className="rounded-xl border p-4">
               <p className="text-sm font-semibold text-zinc-900">3 алхамтай төлөвлөгөө</p>
               <ul className="mt-3 space-y-2 text-sm text-zinc-700">
-                {plan.steps.map((item) => (
-                  <li key={item} className="rounded-lg bg-zinc-50 px-3 py-2">
+                {plan.steps.map((item, index) => (
+                  <li key={index} className="rounded-lg bg-zinc-50 px-3 py-2">
                     {item}
                   </li>
                 ))}
@@ -137,8 +137,8 @@ export default function StudyPlanPanel({
             <div className="rounded-xl border p-4">
               <p className="text-sm font-semibold text-zinc-900">Дараагийн practice focus</p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {plan.next_practice_focus.map((item) => (
-                  <Badge key={item} variant="outline">
+                {plan.next_practice_focus.map((item, index) => (
+                  <Badge key={index} variant="outline">
                     {item}
                   </Badge>
                 ))}
