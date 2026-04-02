@@ -2,6 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  buildExamLifecycleMap,
+  type ExamLifecycleSummary,
+} from "@/lib/exam-lifecycle";
+import { getExamPublishGuardError } from "@/lib/exam-readiness";
+import { syncExamRecipients } from "@/lib/exam-recipients";
+import {
+  buildPublishedExamSnapshot,
+  isSnapshotColumnMissingError,
+  primePublishedExamSnapshotCache,
+} from "@/lib/exam-snapshot";
+import { prewarmExamCache } from "@/lib/student/actions";
 
 
 export async function getAdminStats() {
@@ -40,6 +53,292 @@ export async function getAllUsers(role?: string) {
 
   const { data } = await query;
   return data ?? [];
+}
+
+export type AdminExamOverview = {
+  id: string;
+  title: string;
+  description: string | null;
+  subjectName: string | null;
+  questionCount: number;
+  isPublished: boolean;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  assignedGroupCount: number;
+  assignedStudentCount: number;
+  pendingGradingCount: number;
+  gradedCount: number;
+  inProgressCount: number;
+  lifecycle: ExamLifecycleSummary | null;
+};
+
+export async function getAdminExamOverview(): Promise<AdminExamOverview[]> {
+  const supabase = await createClient();
+
+  const { data: exams } = await supabase
+    .from("exams")
+    .select(
+      "id, title, description, subject_id, is_published, start_time, end_time, duration_minutes, created_at, subjects(name), questions(count)"
+    )
+    .order("created_at", { ascending: false });
+
+  const examRows = exams ?? [];
+  if (examRows.length === 0) return [];
+
+  const lifecycleMap = await buildExamLifecycleMap(
+    supabase,
+    examRows.map((exam) => ({
+      id: exam.id,
+      subject_id: exam.subject_id,
+      start_time: exam.start_time,
+      end_time: exam.end_time,
+      duration_minutes: Number(exam.duration_minutes ?? 0),
+      is_published: Boolean(exam.is_published),
+      questions: Array.isArray(exam.questions)
+        ? exam.questions
+        : exam.questions
+          ? [exam.questions]
+          : [],
+    }))
+  );
+
+  const examIds = examRows.map((exam) => exam.id);
+  const [{ data: assignmentRows }, { data: sessionRows }] = await Promise.all([
+    supabase
+      .from("exam_assignments")
+      .select("exam_id, group_id")
+      .in("exam_id", examIds),
+    supabase
+      .from("exam_sessions")
+      .select("exam_id, status")
+      .in("exam_id", examIds)
+      .in("status", ["in_progress", "submitted", "graded"]),
+  ]);
+
+  const groupIds = Array.from(
+    new Set((assignmentRows ?? []).map((row) => row.group_id))
+  );
+
+  const { data: memberRows } =
+    groupIds.length > 0
+      ? await supabase
+          .from("student_group_members")
+          .select("group_id, student_id")
+          .in("group_id", groupIds)
+      : { data: [] as Array<{ group_id: string; student_id: string }> };
+
+  const studentIdsByGroup = new Map<string, Set<string>>();
+  for (const member of memberRows ?? []) {
+    const current = studentIdsByGroup.get(member.group_id) ?? new Set<string>();
+    current.add(member.student_id);
+    studentIdsByGroup.set(member.group_id, current);
+  }
+
+  const groupIdsByExam = new Map<string, string[]>();
+  for (const row of assignmentRows ?? []) {
+    const current = groupIdsByExam.get(row.exam_id) ?? [];
+    current.push(row.group_id);
+    groupIdsByExam.set(row.exam_id, current);
+  }
+
+  const sessionCountsByExam = new Map<
+    string,
+    {
+      inProgressCount: number;
+      pendingGradingCount: number;
+      gradedCount: number;
+    }
+  >();
+
+  for (const row of sessionRows ?? []) {
+    const current = sessionCountsByExam.get(row.exam_id) ?? {
+      inProgressCount: 0,
+      pendingGradingCount: 0,
+      gradedCount: 0,
+    };
+
+    if (row.status === "in_progress") current.inProgressCount += 1;
+    if (row.status === "submitted") current.pendingGradingCount += 1;
+    if (row.status === "graded") current.gradedCount += 1;
+
+    sessionCountsByExam.set(row.exam_id, current);
+  }
+
+  return examRows.map((exam) => {
+    const subject = Array.isArray(exam.subjects)
+      ? exam.subjects[0]
+      : exam.subjects;
+    const groupIdsForExam = groupIdsByExam.get(exam.id) ?? [];
+    const uniqueStudentIds = new Set<string>();
+
+    groupIdsForExam.forEach((groupId) => {
+      (studentIdsByGroup.get(groupId) ?? new Set<string>()).forEach(
+        (studentId) => {
+          uniqueStudentIds.add(studentId);
+        }
+      );
+    });
+
+    const sessionCounts = sessionCountsByExam.get(exam.id) ?? {
+      inProgressCount: 0,
+      pendingGradingCount: 0,
+      gradedCount: 0,
+    };
+
+    return {
+      id: exam.id,
+      title: exam.title,
+      description: exam.description ?? null,
+      subjectName: subject?.name ?? null,
+      questionCount: Array.isArray(exam.questions)
+        ? (exam.questions[0]?.count ?? 0)
+        : 0,
+      isPublished: Boolean(exam.is_published),
+      startTime: exam.start_time,
+      endTime: exam.end_time,
+      durationMinutes: Number(exam.duration_minutes ?? 0),
+      assignedGroupCount: groupIdsForExam.length,
+      assignedStudentCount: uniqueStudentIds.size,
+      pendingGradingCount: sessionCounts.pendingGradingCount,
+      gradedCount: sessionCounts.gradedCount,
+      inProgressCount: sessionCounts.inProgressCount,
+      lifecycle: lifecycleMap.get(exam.id) ?? null,
+    };
+  });
+}
+
+async function requireAdminUser() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Нэвтрээгүй байна", userId: null };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!profile || profile.role !== "admin") {
+    return { error: "Админ эрх шаардлагатай", userId: null };
+  }
+
+  return { error: null, userId: user.id };
+}
+
+export async function approveAdminExam(examId: string) {
+  const auth = await requireAdminUser();
+  if (auth.error || !auth.userId) return { error: auth.error };
+
+  const admin = createAdminClient();
+
+  const { data: exam } = await admin
+    .from("exams")
+    .select("id, is_published")
+    .eq("id", examId)
+    .maybeSingle();
+
+  if (!exam) return { error: "Шалгалт олдсонгүй" };
+  if (exam.is_published) return { error: "Энэ шалгалт аль хэдийн батлагдсан." };
+
+  const publishGuardError = await getExamPublishGuardError(
+    admin,
+    auth.userId,
+    examId
+  );
+  if (publishGuardError) {
+    return { error: publishGuardError };
+  }
+
+  const syncResult = await syncExamRecipients(admin, examId, auth.userId);
+  if (!syncResult.success) {
+    return { error: syncResult.error };
+  }
+
+  const snapshot = await buildPublishedExamSnapshot(admin, examId);
+  if (!snapshot) {
+    return { error: "Шалгалтын snapshot үүсгэж чадсангүй" };
+  }
+
+  try {
+    await prewarmExamCache(examId, snapshot);
+  } catch (prewarmError) {
+    return {
+      error:
+        prewarmError instanceof Error
+          ? `Шалгалтын cache бэлтгэхэд алдаа гарлаа: ${prewarmError.message}`
+          : "Шалгалтын cache бэлтгэхэд алдаа гарлаа",
+    };
+  }
+
+  const publishPayload = {
+    is_published: true,
+    published_snapshot: snapshot,
+    published_at: snapshot.exam.published_at,
+  };
+
+  const { error } = await admin
+    .from("exams")
+    .update(publishPayload)
+    .eq("id", examId);
+
+  if (error && isSnapshotColumnMissingError(error.code)) {
+    const fallback = await admin
+      .from("exams")
+      .update({ is_published: true })
+      .eq("id", examId);
+
+    if (fallback.error) return { error: fallback.error.message };
+  } else if (error) {
+    return { error: error.message };
+  } else {
+    await primePublishedExamSnapshotCache(examId, snapshot);
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/teachers/exams");
+  revalidatePath("/educator");
+  revalidatePath(`/educator/exams/${examId}`);
+  revalidatePath("/student");
+  revalidatePath("/student/exams");
+  revalidatePath("/student/schedule");
+  revalidatePath("/student/results");
+  revalidatePath(`/student/exams/${examId}/take`);
+  revalidatePath(`/student/exams/${examId}/result`);
+
+  return { success: true };
+}
+
+export async function rejectAdminExam(examId: string) {
+  const auth = await requireAdminUser();
+  if (auth.error || !auth.userId) return { error: auth.error };
+
+  const admin = createAdminClient();
+
+  const { data: exam } = await admin
+    .from("exams")
+    .select("id, is_published")
+    .eq("id", examId)
+    .maybeSingle();
+
+  if (!exam) return { error: "Шалгалт олдсонгүй" };
+  if (exam.is_published) {
+    return { error: "Батлагдсан шалгалтыг татгалзах боломжгүй." };
+  }
+
+  const { error } = await admin.from("exams").delete().eq("id", examId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/teachers/exams");
+  revalidatePath("/educator");
+
+  return { success: true };
 }
 
 // ── Teacher subject & assignment management ───────────────────────────────────
