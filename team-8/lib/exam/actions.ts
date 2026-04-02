@@ -960,6 +960,25 @@ export async function getExamById(examId: string) {
   return data;
 }
 
+export async function getExamEditorById(examId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from("exams")
+    .select(
+      "id, title, description, subject_id, start_time, end_time, duration_minutes, passing_score, max_attempts, shuffle_questions, shuffle_options, is_published, proctoring_mode, device_policy, require_fullscreen, require_camera, identity_verification, evidence_mode, post_exam_similarity_enabled, exam_assignments(group_id)"
+    )
+    .eq("id", examId)
+    .eq("created_by", user.id)
+    .maybeSingle();
+
+  return data;
+}
+
 /**
  * Шалгалтын бүх оролцогчдын дүнг нэгтгэн буцаана.
  * Багш өөрийн болон teaching scope-ийн шалгалтыг харж болно.

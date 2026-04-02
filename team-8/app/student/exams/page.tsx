@@ -4,6 +4,7 @@ import { formatDateTimeUB } from "@/lib/utils/date";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import StudentExamsAutoRefresh from "./_features/StudentExamsAutoRefresh";
 
 export default async function StudentExamsPage({
   searchParams,
@@ -15,6 +16,13 @@ export default async function StudentExamsPage({
 
   return (
     <div className="space-y-4">
+      <StudentExamsAutoRefresh
+        exams={exams.map((exam) => ({
+          startTime: exam.start_time,
+          resultReleaseAt: exam.result_release_at,
+          canViewResults: Boolean(exam.can_view_results),
+        }))}
+      />
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Шалгалтууд</h2>
       </div>

@@ -27,5 +27,14 @@ export const examBurstRateLimit = new Ratelimit({
   analytics: true,
 });
 
+// Exam-level submit burst smoothing: олон сурагч нэгэн зэрэг finish дарахад
+// session finalize болон answer upsert дээр огцом spike үүсэхээс хамгаална.
+// Key: exam-submit:{examId} — per exam, not per user
+export const examSubmitBurstRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.tokenBucket(30, "1 s", 60),
+  analytics: true,
+});
+
 // Backward-compatible generic limiter
 export const ratelimit = startExamRateLimit;

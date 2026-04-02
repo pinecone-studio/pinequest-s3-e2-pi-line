@@ -229,7 +229,13 @@ export default async function ExamResultPage({
   if (data.grading_pending) {
     return (
       <div className="mx-auto mt-12 flex max-w-3xl flex-col items-center px-4">
-        <RouteAutoRefresh active label="ExamResultPage" />
+        <RouteAutoRefresh
+          active
+          intervalsMs={[6000, 10000, 10000, 15000, 15000, 30000]}
+          label="ExamResultPage"
+          pauseWhenHidden
+          runImmediately={false}
+        />
         <div className="w-full rounded-[28px] border bg-white p-8 shadow-sm text-center">
           <h1 className="text-2xl font-semibold text-foreground">
             {examMeta?.title ?? "Шалгалтын үр дүн"}
