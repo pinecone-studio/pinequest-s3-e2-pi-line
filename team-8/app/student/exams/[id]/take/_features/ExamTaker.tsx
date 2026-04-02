@@ -916,13 +916,13 @@ export default function ExamTaker({
         : null;
   const sebDetected = isSEBBrowser();
 
-  const { cameraStatus, videoRef } = useCameraMonitor({
+  const { cameraStatus, videoRef, retryCamera } = useCameraMonitor({
     sessionId,
     enabled: shouldRunContinuousCamera && (!REQUIRE_SEB || sebDetected),
     preferFrontCamera: true,
   });
   const shouldPinCameraPreview =
-    cameraStatus === "granted" && (!isMobileStandard || spotCheckOpen);
+    cameraStatus === "active" && (!isMobileStandard || spotCheckOpen);
 
   // Gaze warning count — only stored in state for badge display.
   // The ref inside useGazeMonitor is the authoritative counter.
@@ -949,7 +949,7 @@ export default function ExamTaker({
     enabled:
       !isSubmitting &&
       requireCamera &&
-      cameraStatus === "granted" &&
+      cameraStatus === "active" &&
       (!isMobileStandard || spotCheckOpen),
     onWarning: handleGazeWarning,
     onMaxWarnings: () => {
@@ -1193,7 +1193,7 @@ export default function ExamTaker({
 
   const runSpotCheck = useCallback(async () => {
     const video = videoRef.current;
-    if (!video || cameraStatus !== "granted") {
+    if (!video || cameraStatus !== "active") {
       setSpotCheckOpen(false);
       emitProctorEvent("spot_check_failed", { reason: "camera_unavailable" });
       return;
@@ -1671,30 +1671,9 @@ export default function ExamTaker({
     };
   }, [emitProctorEvent, isMobileSession]);
 
-  useEffect(() => {
-    if (!requireCamera) return;
-
-    const video = videoRef.current;
-    const stream = video?.srcObject;
-    if (!(stream instanceof MediaStream)) return;
-
-    const tracks = stream.getVideoTracks();
-    if (tracks.length === 0) return;
-
-    const handleTrackEnded = () => {
-      emitProctorEvent("camera_disconnected", { reason: "track_ended" }, 1000);
-    };
-
-    for (const track of tracks) {
-      track.addEventListener("ended", handleTrackEnded);
-    }
-
-    return () => {
-      for (const track of tracks) {
-        track.removeEventListener("ended", handleTrackEnded);
-      }
-    };
-  }, [emitProctorEvent, requireCamera, videoRef, cameraStatus]);
+  // Note: track-ended handling is now managed inside useCameraMonitor.
+  // It logs camera_disconnected via logProctorEvent and auto-retries up to MAX_AUTO_RETRIES.
+  // This effect is intentionally removed to avoid double-handling.
 
   useEffect(() => {
     if (!heartbeatIntervalMs) return;
@@ -2125,6 +2104,24 @@ export default function ExamTaker({
             </button>
           </div>
         )}
+        {requireCamera && (cameraStatus === "failed" || cameraStatus === "disconnected") && (
+          <div className="w-full max-w-[1090px] rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="flex items-center justify-between gap-4">
+              <span>
+                {cameraStatus === "denied"
+                  ? "Камерын зөвшөөрөл байхгүй. Браузерын тохиргооноос зөвшөөрнэ үү."
+                  : "Камер тасарсан байна. Шалгалт үргэлжлэх боловч камер ажиллахгүй байна."}
+              </span>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                onClick={retryCamera}
+              >
+                Камер дахин нээх
+              </button>
+            </div>
+          </div>
+        )}
         {gazeWarningCount > 0 && !isMobileStandard && (
           <div className="w-full max-w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-2 text-center text-sm font-medium text-red-700 md:max-w-[1090px]">
             {gazeWarningCount < 3
@@ -2137,6 +2134,12 @@ export default function ExamTaker({
         <div className="flex w-full max-w-full flex-wrap items-center gap-2 md:max-w-[1090px]">
           {!isOnline && <Badge variant="destructive">Offline</Badge>}
           {cameraStatus === "denied" && <Badge variant="destructive">Камер хаалттай</Badge>}
+          {(cameraStatus === "failed" || cameraStatus === "disconnected") && requireCamera && (
+            <Badge variant="destructive">Камер тасарсан</Badge>
+          )}
+          {(cameraStatus === "requesting" || cameraStatus === "starting" || cameraStatus === "retrying") && requireCamera && (
+            <Badge variant="outline">Камер нээж байна...</Badge>
+          )}
           {shouldEnforceFullscreen && !fullscreenActive && <Badge variant="destructive">Fullscreen off</Badge>}
           {gazeWarningCount > 0 && !isMobileStandard && <Badge variant="destructive">Анхааруулга {gazeWarningCount}/3</Badge>}
           {tabSwitchCount > 0 && <Badge variant="destructive">{isMobileSession ? "App" : "Tab"} {tabSwitchCount}</Badge>}

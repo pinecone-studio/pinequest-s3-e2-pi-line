@@ -68,6 +68,8 @@ export default function PreExamCheck({
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraRetryCountRef = useRef(0);
+  const cameraRequestInFlightRef = useRef(false);
   const [internetStatus, setInternetStatus] = useState<CheckStatus>("checking");
   const [internetMessage, setInternetMessage] = useState("Сүлжээг шалгаж байна...");
   const [batteryStatus, setBatteryStatus] = useState<CheckStatus>("checking");
@@ -213,43 +215,139 @@ export default function PreExamCheck({
   }, []);
 
   useEffect(() => {
-    if (!requireCamera) {
-      return;
-    }
+    if (!requireCamera) return;
 
     let cancelled = false;
 
-    navigator.mediaDevices
-      .getUserMedia(getPreferredCameraConstraints(true))
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
+    async function startCamera(isRetry = false) {
+      if (cancelled) return;
+      if (cameraRequestInFlightRef.current) return;
+      cameraRequestInFlightRef.current = true;
+
+      if (isRetry) {
+        setCameraStatus("checking");
+        setCameraMessage("Камерыг дахин нээж байна...");
+      }
+
+      // Stop any previous stream before requesting a new one.
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      const vid = videoRef.current;
+      if (vid) vid.srcObject = null;
+
+      // Constraint waterfall: exact front → ideal front → any camera.
+      const constraintList: MediaStreamConstraints[] = [
+        { video: { facingMode: "user" }, audio: false },
+        { video: { facingMode: { ideal: "user" } }, audio: false },
+        { video: true, audio: false },
+      ];
+
+      let stream: MediaStream | null = null;
+      let lastErr: Error | null = null;
+
+      for (const constraints of constraintList) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (err) {
+          lastErr = err as Error;
+          if (
+            (err as Error).name === "NotAllowedError" ||
+            (err as Error).name === "PermissionDeniedError"
+          ) {
+            break;
+          }
         }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+      }
+
+      cameraRequestInFlightRef.current = false;
+      if (cancelled) {
+        stream?.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      if (!stream) {
+        const isPermission =
+          lastErr?.name === "NotAllowedError" ||
+          lastErr?.name === "PermissionDeniedError";
+        setCameraStatus("error");
+        setCameraMessage(
+          isPermission
+            ? "Камерын зөвшөөрөл өгөөгүй байна. Браузерын тохиргооноос зөвшөөрнэ үү."
+            : "Камерийг нээж чадсангүй. Бусад апп камерыг ашиглаж байгаа байж болно."
+        );
+        return;
+      }
+
+      streamRef.current = stream;
+      setCameraStatus("checking");
+      setCameraMessage("Камер нээгдсэн, дүрсийг шалгаж байна...");
+
+      // Attach to video element.
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        void video.play().catch(() => {});
+      }
+
+      // Wait for loadedmetadata (max 8 s).
+      const metaReady = await new Promise<boolean>((resolve) => {
+        const v = videoRef.current;
+        if (!v) { resolve(false); return; }
+        if (v.readyState >= HTMLMediaElement.HAVE_METADATA) { resolve(true); return; }
+        const timer = setTimeout(() => {
+          v.removeEventListener("loadedmetadata", onMeta);
+          resolve(v.readyState >= HTMLMediaElement.HAVE_METADATA);
+        }, 8000);
+        const onMeta = () => { clearTimeout(timer); resolve(true); };
+        v.addEventListener("loadedmetadata", onMeta, { once: true });
+      });
+
+      if (cancelled) return;
+
+      if (!metaReady) {
+        setCameraStatus("error");
+        setCameraMessage("Камерын дүрс ачаалагдсангүй. Дахин оролдоно уу.");
+        return;
+      }
+
+      // Short grace period so the first frame can render on slow phones.
+      await new Promise<void>((resolve) => setTimeout(resolve, 400));
+      if (cancelled) return;
+
+      const v2 = videoRef.current;
+      const tracks = stream.getVideoTracks();
+      const isRendering =
+        v2 &&
+        v2.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        v2.videoWidth > 0 &&
+        !v2.paused &&
+        tracks.length > 0 &&
+        tracks[0].readyState === "live";
+
+      if (isRendering) {
         setCameraStatus("ok");
         setCameraMessage("Камер бэлэн байна.");
-      })
-      .catch((cameraError: DOMException) => {
-        if (cancelled) return;
+        cameraRetryCountRef.current = 0;
+      } else {
         setCameraStatus("error");
-        if (cameraError?.name === "NotAllowedError") {
-          setCameraMessage("Камерын зөвшөөрөл өгөөгүй байна.");
-        } else {
-          setCameraMessage("Камерийг нээж чадсангүй.");
-        }
-      });
+        setCameraMessage("Камер нээгдсэн ч дүрс гарахгүй байна. Дахин оролдоно уу.");
+      }
+    }
+
+    void startCamera(false);
 
     return () => {
       cancelled = true;
+      cameraRequestInFlightRef.current = false;
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requireCamera]);
 
   useEffect(() => {
@@ -257,7 +355,14 @@ export default function PreExamCheck({
 
     const interval = window.setInterval(() => {
       const video = videoRef.current;
-      if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const stream = streamRef.current;
+      // Only run health check when video is confirmed rendering.
+      if (
+        !video ||
+        !stream ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        video.videoWidth === 0
+      ) {
         return;
       }
 
@@ -267,7 +372,7 @@ export default function PreExamCheck({
         if (score < 30) {
           setCameraStatus("warning");
           setCameraMessage("Орчны гэрэл бага байна. Илүү гэрэлтэй газар сууна уу.");
-        } else if (score >= 30) {
+        } else {
           setCameraStatus("ok");
           setCameraMessage("Камер бэлэн байна.");
         }
@@ -387,6 +492,100 @@ export default function PreExamCheck({
     return () =>
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, [requireFullscreen, shouldEnforceFullscreen]);
+
+  function handleCameraRetry() {
+    if (cameraRequestInFlightRef.current) return;
+    cameraRetryCountRef.current += 1;
+    cameraRequestInFlightRef.current = true;
+
+    // Stop any existing stream.
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    const vid = videoRef.current;
+    if (vid) vid.srcObject = null;
+
+    setCameraStatus("checking");
+    setCameraMessage("Камерыг дахин нээж байна...");
+    setBrightnessScore(null);
+
+    const constraintList: MediaStreamConstraints[] = [
+      { video: { facingMode: "user" }, audio: false },
+      { video: { facingMode: { ideal: "user" } }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    async function attempt() {
+      let stream: MediaStream | null = null;
+      let lastErr: Error | null = null;
+
+      for (const constraints of constraintList) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (err) {
+          lastErr = err as Error;
+          if (
+            (err as Error).name === "NotAllowedError" ||
+            (err as Error).name === "PermissionDeniedError"
+          ) break;
+        }
+      }
+
+      cameraRequestInFlightRef.current = false;
+      if (!stream) {
+        const isPerm =
+          lastErr?.name === "NotAllowedError" ||
+          lastErr?.name === "PermissionDeniedError";
+        setCameraStatus("error");
+        setCameraMessage(
+          isPerm
+            ? "Камерын зөвшөөрөл байхгүй байна. Браузерын тохиргооноос зөвшөөрнэ үү."
+            : "Камерийг нээж чадсангүй. Дахин оролдоно уу."
+        );
+        return;
+      }
+
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        void video.play().catch(() => {});
+      }
+
+      // Wait for metadata.
+      await new Promise<void>((resolve) => {
+        const v = videoRef.current;
+        if (!v || v.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          resolve(); return;
+        }
+        const timer = setTimeout(resolve, 8000);
+        v.addEventListener("loadedmetadata", () => { clearTimeout(timer); resolve(); }, { once: true });
+      });
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 400));
+
+      const v2 = videoRef.current;
+      const tracks2 = stream.getVideoTracks();
+      if (
+        v2 &&
+        v2.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        v2.videoWidth > 0 &&
+        !v2.paused &&
+        tracks2.length > 0 &&
+        tracks2[0].readyState === "live"
+      ) {
+        setCameraStatus("ok");
+        setCameraMessage("Камер бэлэн байна.");
+      } else {
+        setCameraStatus("error");
+        setCameraMessage("Камер нээгдсэн ч дүрс гарахгүй байна. Дахин оролдоно уу.");
+      }
+    }
+
+    void attempt();
+  }
 
   async function ensureFullscreen() {
     if (!shouldEnforceFullscreen || document.fullscreenElement) {
@@ -542,30 +741,45 @@ export default function PreExamCheck({
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-[16px] border border-[#BDBDBD] bg-white px-6 py-4 shadow-sm">
-            <div className="flex items-center gap-5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md">
-                <Camera className="h-7 w-7 text-black" />
+          <div className="rounded-[16px] border border-[#BDBDBD] bg-white px-6 py-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md">
+                  <Camera className="h-7 w-7 text-black" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-base font-medium leading-[120%] text-black">Камер</p>
+                  <p className="text-sm leading-[120%] text-[#6B6B6B]">
+                    {cameraMessage}
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <p className="text-base font-medium leading-[120%] text-black">Камер</p>
-                <p className="text-sm leading-[120%] text-[#6B6B6B]">
-                  {brightnessScore !== null
-                    ? `${cameraMessage}${cameraMessage.endsWith(".") ? "" : "."}`
-                    : cameraMessage}
-                </p>
+              <div className="flex flex-col items-center gap-0.5">
+                {cameraStatus === "checking" ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-[#6B6B6B]" />
+                ) : cameraStatus === "error" ? (
+                  <XCircle className="h-6 w-6 text-[#E05252]" />
+                ) : (
+                  <CheckCircle2 className="h-6 w-6 text-[#6BBF7A]" />
+                )}
+                <span className={`text-[12px] leading-[120%] ${cameraStatus === "error" ? "text-[#E05252]" : cameraStatus === "checking" ? "text-[#6B6B6B]" : "text-[#3B8748]"}`}>
+                  {cameraStatus === "warning" ? "Анхаар" : cameraStatus === "error" ? "Алдаа" : cameraStatus === "checking" ? "Шалгаж байна" : "Хэвийн"}
+                </span>
               </div>
             </div>
-            <div className="flex w-[43px] flex-col items-center gap-0.5">
-              {cameraStatus === "error" ? (
-                <XCircle className="h-6 w-6 text-[#E05252]" />
-              ) : (
-                <CheckCircle2 className="h-6 w-6 text-[#6BBF7A]" />
-              )}
-              <span className={`text-[12px] leading-[120%] ${cameraStatus === "error" ? "text-[#E05252]" : "text-[#3B8748]"}`}>
-                {cameraStatus === "warning" ? "Анхаар" : cameraStatus === "error" ? "Алдаа" : "Хэвийн"}
-              </span>
-            </div>
+            {cameraStatus === "error" && requireCamera && (
+              <div className="mt-3 flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-[8px] border border-[#BDBDBD] text-xs font-medium text-black hover:bg-zinc-50"
+                  onClick={handleCameraRetry}
+                >
+                  Камер дахин нээх
+                </Button>
+              </div>
+            )}
           </div>
 
           <video
@@ -600,7 +814,7 @@ export default function PreExamCheck({
               type="button"
               variant="outline"
               className="h-10 flex-1 rounded-[8px] border border-[#BDBDBD] bg-white text-sm font-medium text-black hover:bg-zinc-50"
-              onClick={() => window.location.reload()}
+              onClick={requireCamera ? handleCameraRetry : () => window.location.reload()}
             >
               Дахин шалгах
             </Button>
