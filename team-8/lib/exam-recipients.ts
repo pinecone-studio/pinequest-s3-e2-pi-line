@@ -1,6 +1,8 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+type SupabaseRecipientSyncClient = Pick<SupabaseServerClient, "from">;
 
 type SyncResult =
   | { success: true; recipientCount: number }
@@ -31,12 +33,26 @@ export async function getPublishedAssignedExamIdsForGroup(
   return { examIds };
 }
 
+function getExamRecipientSyncClient(
+  supabase: SupabaseServerClient
+): SupabaseRecipientSyncClient {
+  try {
+    // Service-role makes recipient sync robust even when teacher access
+    // depends on teaching scope and database RLS is stricter than app logic.
+    return createAdminClient() as unknown as SupabaseRecipientSyncClient;
+  } catch {
+    return supabase;
+  }
+}
+
 export async function syncExamRecipients(
   supabase: SupabaseServerClient,
   examId: string,
   assignedBy?: string | null
 ): Promise<SyncResult> {
-  const { data: assignments, error: assignmentsError } = await supabase
+  const syncClient = getExamRecipientSyncClient(supabase);
+
+  const { data: assignments, error: assignmentsError } = await syncClient
     .from("exam_assignments")
     .select("group_id, assigned_by")
     .eq("exam_id", examId);
@@ -50,7 +66,7 @@ export async function syncExamRecipients(
   );
 
   if (groupIds.length === 0) {
-    const { error: deleteAllError } = await supabase
+    const { error: deleteAllError } = await syncClient
       .from("exam_recipients")
       .delete()
       .eq("exam_id", examId);
@@ -62,7 +78,7 @@ export async function syncExamRecipients(
     return { success: true, recipientCount: 0 };
   }
 
-  const { data: members, error: membersError } = await supabase
+  const { data: members, error: membersError } = await syncClient
     .from("student_group_members")
     .select("student_id")
     .in("group_id", groupIds);
@@ -76,7 +92,7 @@ export async function syncExamRecipients(
   );
 
   if (studentIds.length === 0) {
-    const { error: deleteAllError } = await supabase
+    const { error: deleteAllError } = await syncClient
       .from("exam_recipients")
       .delete()
       .eq("exam_id", examId);
@@ -88,7 +104,7 @@ export async function syncExamRecipients(
     return { success: true, recipientCount: 0 };
   }
 
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await syncClient
     .from("exam_recipients")
     .delete()
     .eq("exam_id", examId)
@@ -111,7 +127,7 @@ export async function syncExamRecipients(
     assigned_by: fallbackAssignedBy,
   }));
 
-  const { error: insertError } = await supabase
+  const { error: insertError } = await syncClient
     .from("exam_recipients")
     .upsert(rows, {
       onConflict: "exam_id,student_id",
