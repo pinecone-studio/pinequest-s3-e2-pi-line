@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sparkles, ChevronDown } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
+import { AiLoading } from '@/app/educator/_components/loading';
 
 export default function AiCreate() {
   return (
@@ -86,6 +87,9 @@ export default function AiCreate() {
           <div className="mt-12">
             <h2 className="text-lg font-bold text-gray-800">SmartExam.v2.0</h2>
             <p className="text-[14x] text-gray-400 mt-1">Таны промтыг уншиж байна.</p>
+            <div className="mt-6">
+              <AiLoading size={230} label="AI боловсруулж байна..." />
+            </div>
           </div>
         </div>
       </div>
