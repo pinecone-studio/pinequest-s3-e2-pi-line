@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,19 +27,6 @@ export default function StudyPlanPanel({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const shouldPoll = status === "pending" || isRefreshing;
-
-  useEffect(() => {
-    if (!shouldPoll) return;
-
-    const intervalId = window.setInterval(() => {
-      router.refresh();
-    }, 4000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [router, shouldPoll]);
 
   const handleRefresh = () => {
     startTransition(async () => {

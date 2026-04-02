@@ -84,7 +84,17 @@ export default async function StudentLearningPage({
 
   return (
     <div className="space-y-6 pb-10">
-      <LearningAutoRefresh active={overview.isRefreshing} />
+      <LearningAutoRefresh
+        active={
+          Boolean(overview.isRefreshing) ||
+          Boolean(
+            studyPlanState &&
+              !("error" in studyPlanState) &&
+              studyPlanState.status === "pending"
+          )
+        }
+        subjectId={selectedSubjectId}
+      />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Learning Hub</h2>

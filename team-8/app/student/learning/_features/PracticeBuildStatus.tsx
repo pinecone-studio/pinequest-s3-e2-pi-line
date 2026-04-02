@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { retryStudentPracticeExamBuild } from "@/lib/student-learning/actions";
+import {
+  processCurrentStudentLearningWork,
+  retryStudentPracticeExamBuild,
+} from "@/lib/student-learning/actions";
+import { useActionRefreshLoop } from "../../_features/useActionRefreshLoop";
 
 export default function PracticeBuildStatus({
   practiceExamId,
@@ -24,17 +28,14 @@ export default function PracticeBuildStatus({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (status !== "building") return;
-
-    const intervalId = window.setInterval(() => {
-      router.refresh();
-    }, 4000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [router, status]);
+  useActionRefreshLoop({
+    active: status === "building",
+    intervalMs: 6000,
+    label: "PracticeBuildStatus",
+    onTick: async () => {
+      await processCurrentStudentLearningWork({ practiceExamId });
+    },
+  });
 
   const handleRetry = () => {
     startTransition(async () => {

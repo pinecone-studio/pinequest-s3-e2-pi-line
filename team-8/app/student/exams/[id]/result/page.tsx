@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { formatDateTimeUB } from "@/lib/utils/date";
 import QuestionStepper from "./_components/QuestionStepper";
+import RouteAutoRefresh from "../../../_features/RouteAutoRefresh";
 function parseStringArray(value: unknown) {
   try {
     const parsed = JSON.parse(String(value ?? "[]")) as string[];
@@ -228,6 +229,7 @@ export default async function ExamResultPage({
   if (data.grading_pending) {
     return (
       <div className="mx-auto mt-12 flex max-w-3xl flex-col items-center px-4">
+        <RouteAutoRefresh active label="ExamResultPage" />
         <div className="w-full rounded-[28px] border bg-white p-8 shadow-sm text-center">
           <h1 className="text-2xl font-semibold text-foreground">
             {examMeta?.title ?? "Шалгалтын үр дүн"}

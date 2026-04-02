@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getStudentResults } from "@/lib/student/actions";
 import { Eye, LockKeyhole } from "lucide-react";
+import RouteAutoRefresh from "../_features/RouteAutoRefresh";
 
 const TIMEZONE = "Asia/Ulaanbaatar";
 
@@ -43,9 +44,16 @@ function getScoreColor(pct: number) {
 
 export default async function StudentResultsPage() {
   const results = await getStudentResults();
+  const hasVisiblePendingResult = results.some(
+    (result) => Boolean(result.can_view_results) && Boolean(result.grading_pending)
+  );
 
   return (
     <div className="flex flex-col gap-6.5">
+      <RouteAutoRefresh
+        active={hasVisiblePendingResult}
+        label="StudentResultsPage"
+      />
       <div className="flex items-center gap-6.5">
         <h2 className="text-2xl font-medium tracking-tight">
           Миний өгсөн шалгалтууд
