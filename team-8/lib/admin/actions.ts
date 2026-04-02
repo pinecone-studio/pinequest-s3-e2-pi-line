@@ -108,6 +108,7 @@ export async function addTeacherSubject(teacherId: string, subjectId: string) {
   }
 
   revalidatePath("/admin/teachers");
+  revalidatePath("/admin/teachers/[departmentId]", "page");
   return { success: true };
 }
 
@@ -131,6 +132,7 @@ export async function removeTeacherSubject(teacherId: string, subjectId: string)
   if (error) return { error: error.message };
 
   revalidatePath("/admin/teachers");
+  revalidatePath("/admin/teachers/[departmentId]", "page");
   return { success: true };
 }
 

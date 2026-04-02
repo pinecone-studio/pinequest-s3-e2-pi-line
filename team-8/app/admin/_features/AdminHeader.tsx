@@ -35,22 +35,29 @@ export default function AdminHeader({ profile }: { profile: Profile }) {
   const displayName = getDisplayName(profile);
   const initials = getInitials(profile);
   const isAdminHome = pathname === "/admin";
-  const showBackLink = pathname?.startsWith("/admin/") && pathname !== "/admin";
+  const isTeachersPage = pathname === "/admin/teachers";
+  const isTeacherDetailPage = pathname?.startsWith("/admin/teachers/");
+  const showBackLink =
+    pathname?.startsWith("/admin/") && pathname !== "/admin" && !isTeachersPage;
+  const backHref = isTeacherDetailPage ? "/admin/teachers" : "/admin";
+  const backLabel = isTeacherDetailPage
+    ? "Хичээлийн оноолт руу буцах"
+    : "Нүүр хуудас руу буцах";
 
   return (
     <header
-      className={`flex h-30.5 flex-col gap-5 py-2 sm:flex-row sm:items-center ${
+      className={`flex h-28  flex-col gap-5 py-2 sm:flex-row sm:items-center ${
         showBackLink ? "sm:justify-start" : "sm:justify-between"
       }`}
     >
       {showBackLink ? (
         <Link
-          href="/admin"
+          href={backHref}
           className="text-[15px] font-medium text-[#111111] hover:text-[#1f2937]"
         >
           <div className="flex items-center gap-1 text-[#030217]">
             <ArrowLeft size={16} />
-            Нүүр хуудас руу буцах
+            {backLabel}
           </div>
         </Link>
       ) : isAdminHome ? (
@@ -61,11 +68,7 @@ export default function AdminHeader({ profile }: { profile: Profile }) {
         </div>
       ) : null}
 
-      <div
-        className={`flex h-[40px] w-[100px] items-center justify-end gap-[20px] self-end sm:self-auto ${
-          showBackLink ? "sm:ml-auto" : ""
-        }`}
-      >
+      <div className="flex h-[40px] w-[100px] items-center justify-end gap-[20px] self-end sm:ml-auto sm:self-auto">
         <NotificationBell />
 
         <Link
