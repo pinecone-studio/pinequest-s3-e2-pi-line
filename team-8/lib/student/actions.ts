@@ -6,11 +6,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   examBurstRateLimit,
+  examSubmitBurstRateLimit,
   proctorEventRateLimit,
   redis,
   startExamRateLimit,
   submitExamRateLimit,
 } from "@/lib/redis";
+import {
+  getProctorEventDedupeKey,
+  getSessionAnswerMetaCacheKey,
+  getSessionAnswersCacheKey,
+  getSessionHeartbeatCacheKey,
+  getSessionMetaCacheKey,
+  writeExamDraftDeltaToRedis,
+} from "@/lib/exam-runtime-cache";
 import {
   getSnapshotQuestionMap,
   getStoredPublishedExamSnapshot,
@@ -158,20 +167,32 @@ function getRelationObject<T>(value: T | T[] | null | undefined) {
   return value ?? null;
 }
 
-function getSessionAnswersCacheKey(sessionId: string, userId: string) {
-  return `session:${sessionId}:user:${userId}:answers`;
-}
-
-function getSessionAnswerMetaCacheKey(sessionId: string, userId: string) {
-  return `session:${sessionId}:user:${userId}:answer-meta`;
-}
-
-function getSessionMetaCacheKey(sessionId: string, userId: string) {
-  return `session:${sessionId}:user:${userId}:meta`;
-}
-
 function getExamAccessCacheKey(examId: string, userId: string) {
   return `exam-access:${examId}:user:${userId}`;
+}
+
+function shouldLogStudentPerf(durationMs: number, thresholdMs: number) {
+  return (
+    process.env.ENABLE_STUDENT_PERF_LOGS === "1" || durationMs >= thresholdMs
+  );
+}
+
+function logStudentPerf(
+  label: string,
+  startedAtMs: number,
+  thresholdMs: number,
+  metadata: Record<string, unknown> = {},
+) {
+  const durationMs = Date.now() - startedAtMs;
+  if (!shouldLogStudentPerf(durationMs, thresholdMs)) {
+    return durationMs;
+  }
+
+  console.info(`[student-perf] ${label}`, {
+    durationMs,
+    ...metadata,
+  });
+  return durationMs;
 }
 
 async function resolveExamAccessWithCache(
@@ -200,10 +221,6 @@ async function resolveExamAccessWithCache(
   const assignedExamRecord = accessContext.accessMap.get(examId);
   if (!assignedRow || !assignedExamRecord) return null;
   return { assignedRow, assignedExamRecord };
-}
-
-function getSessionHeartbeatCacheKey(sessionId: string) {
-  return `heartbeat:session:${sessionId}`;
 }
 
 function getStartSessionLockKey(examId: string, userId: string) {
@@ -1676,6 +1693,7 @@ async function finalizeSessionAttempt(
     skipPostFinalizeSideEffects?: boolean;
   }
 ) {
+  const finalizeStartedAt = Date.now();
   const redisKey = getSessionAnswersCacheKey(sessionId, userId);
   const analyticsKey = getSessionAnswerMetaCacheKey(sessionId, userId);
   const lockKey = getSubmitSessionLockKey(sessionId, userId);
@@ -1857,6 +1875,12 @@ async function finalizeSessionAttempt(
     };
   } finally {
     await redis.del(lockKey);
+    logStudentPerf("finalizeSessionAttempt", finalizeStartedAt, 600, {
+      examId,
+      reason,
+      sessionId,
+      userId,
+    });
   }
 }
 
@@ -2628,71 +2652,79 @@ export async function prepareExamTakePayload(
     expectedStartedAt?: string | null;
   }
 ): Promise<PrepareExamTakePayloadResult> {
+  const prepareStartedAt = Date.now();
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" } as const;
-
-  const examAccess = await resolveExamAccessWithCache(supabase, examId, user.id);
-  if (!examAccess) {
-    return { redirectTo: "/student/exams?error=exam_not_found" } as const;
-  }
-  const { assignedRow, assignedExamRecord } = examAccess;
-  if (assignedRow.excused_at) {
-    return { redirectTo: "/student/exams?error=exam_not_found" } as const;
-  }
-  const assignedExam = { row: assignedRow, exam: assignedExamRecord };
-
-  const exam = assignedExam.exam;
-  const now = Date.now();
-  const startTime = new Date(exam.start_time as string).getTime();
-
-  if (now < startTime) {
-    return {
-      redirectTo: `/student/exams?error=time_window&exam=${encodeURIComponent(exam.title)}`,
-    } as const;
-  }
-
-  const examPayload = await loadStudentExamPayload(supabase, examId, assignedExam);
-
-  if (!examPayload || !Array.isArray(examPayload.questions) || examPayload.questions.length === 0) {
-    return { redirectTo: "/student/exams?error=questions_not_ready" } as const;
-  }
-
-  const hintedSessionId = options?.sessionId?.trim();
-  const hintedSession = hintedSessionId
-    ? await getOwnedSessionById(supabase, hintedSessionId, examId, user.id)
-    : null;
-  const inProgressSession =
-    hintedSession ?? (await getInProgressSession(supabase, examId, user.id));
-  const canSkipSavedStateReads = Boolean(
-    options?.skipSavedStateReads &&
-      options?.expectedStartedAt &&
-      inProgressSession?.started_at &&
-      String(inProgressSession.started_at) === String(options.expectedStartedAt) &&
-      Date.now() - new Date(String(options.expectedStartedAt)).getTime() < 15000
-  );
-  const preparedState = await buildPreparedSessionState(
-    supabase,
-    user.id,
-    examId,
-    examPayload,
-    inProgressSession
-      ? {
-          id: String(inProgressSession.id),
-          started_at: String(inProgressSession.started_at),
-          status: String(inProgressSession.status),
-        }
-      : null,
-    {
-      skipSavedStateReads: canSkipSavedStateReads,
+  try {
+    const examAccess = await resolveExamAccessWithCache(supabase, examId, user.id);
+    if (!examAccess) {
+      return { redirectTo: "/student/exams?error=exam_not_found" } as const;
     }
-  );
+    const { assignedRow, assignedExamRecord } = examAccess;
+    if (assignedRow.excused_at) {
+      return { redirectTo: "/student/exams?error=exam_not_found" } as const;
+    }
+    const assignedExam = { row: assignedRow, exam: assignedExamRecord };
 
-  if ("redirectTo" in preparedState && typeof preparedState.redirectTo === "string") {
-    return preparedState;
-  }
+    const exam = assignedExam.exam;
+    const now = Date.now();
+    const startTime = new Date(exam.start_time as string).getTime();
+
+    if (now < startTime) {
+      return {
+        redirectTo: `/student/exams?error=time_window&exam=${encodeURIComponent(exam.title)}`,
+      } as const;
+    }
+
+    const examPayload = await loadStudentExamPayload(supabase, examId, assignedExam);
+
+    if (
+      !examPayload ||
+      !Array.isArray(examPayload.questions) ||
+      examPayload.questions.length === 0
+    ) {
+      return { redirectTo: "/student/exams?error=questions_not_ready" } as const;
+    }
+
+    const hintedSessionId = options?.sessionId?.trim();
+    const hintedSession = hintedSessionId
+      ? await getOwnedSessionById(supabase, hintedSessionId, examId, user.id)
+      : null;
+    const inProgressSession =
+      hintedSession ?? (await getInProgressSession(supabase, examId, user.id));
+    const canSkipSavedStateReads = Boolean(
+      options?.skipSavedStateReads &&
+        options?.expectedStartedAt &&
+        inProgressSession?.started_at &&
+        String(inProgressSession.started_at) === String(options.expectedStartedAt) &&
+        Date.now() - new Date(String(options.expectedStartedAt)).getTime() < 15000
+    );
+    const preparedState = await buildPreparedSessionState(
+      supabase,
+      user.id,
+      examId,
+      examPayload,
+      inProgressSession
+        ? {
+            id: String(inProgressSession.id),
+            started_at: String(inProgressSession.started_at),
+            status: String(inProgressSession.status),
+          }
+        : null,
+      {
+        skipSavedStateReads: canSkipSavedStateReads,
+      }
+    );
+
+    if (
+      "redirectTo" in preparedState &&
+      typeof preparedState.redirectTo === "string"
+    ) {
+      return preparedState;
+    }
 
     return {
       exam: examPayload.exam as StudentAssignedExam & Record<string, unknown>,
@@ -2715,8 +2747,15 @@ export async function prepareExamTakePayload(
       savedAnswers: preparedState.savedAnswers,
       answerAnalytics: preparedState.answerAnalytics,
       initialTimeLeftSeconds: preparedState.initialTimeLeftSeconds,
-    sessionAlreadyStarted: preparedState.sessionAlreadyStarted,
-  } satisfies PrepareExamTakePayloadResult;
+      sessionAlreadyStarted: preparedState.sessionAlreadyStarted,
+    } satisfies PrepareExamTakePayloadResult;
+  } finally {
+    logStudentPerf("prepareExamTakePayload", prepareStartedAt, 400, {
+      examId,
+      hintedSessionId: options?.sessionId ?? null,
+      skipSavedStateReads: Boolean(options?.skipSavedStateReads),
+    });
+  }
 }
 
 /**
@@ -2749,53 +2788,30 @@ export async function saveAnswersBatchForUserClient(
   answers: Record<string, string>,
   answerAnalytics: Record<string, AnswerChangeAnalytics> = {}
 ) {
-  const session = await getSessionMeta(supabase, sessionId, userId);
-  if (!session) return { error: "Session олдсонгүй" };
-  if (session.status !== "in_progress") {
-    return { error: "Энэ шалгалтын session идэвхгүй байна" };
-  }
-
-  const redisKey = getSessionAnswersCacheKey(sessionId, userId);
-  const analyticsKey = getSessionAnswerMetaCacheKey(sessionId, userId);
-
-  const toSet: Record<string, string> = {};
-  const toDelete: string[] = [];
-  const analyticsToSet: Record<string, string> = {};
-
-  for (const [questionId, answer] of Object.entries(answers)) {
-    if (answer === "") {
-      toDelete.push(questionId);
-    } else {
-      toSet[questionId] = answer;
+  const checkpointStartedAt = Date.now();
+  try {
+    const session = await getSessionMeta(supabase, sessionId, userId);
+    if (!session) return { error: "Session олдсонгүй" };
+    if (session.status !== "in_progress") {
+      return { error: "Энэ шалгалтын session идэвхгүй байна" };
     }
-  }
 
-  for (const [questionId, analytics] of Object.entries(answerAnalytics)) {
-    analyticsToSet[questionId] = JSON.stringify(analytics);
-  }
+    await writeExamDraftDeltaToRedis({
+      sessionId,
+      userId,
+      answers,
+      answerAnalytics,
+    });
 
-  const pipeline = redis.pipeline();
-  let hasRedisMutations = false;
-
-  if (Object.keys(toSet).length > 0) {
-    pipeline.hset(redisKey, toSet);
-    hasRedisMutations = true;
+    return { success: true };
+  } finally {
+    logStudentPerf("saveAnswersBatch", checkpointStartedAt, 250, {
+      analyticsCount: Object.keys(answerAnalytics).length,
+      answerCount: Object.keys(answers).length,
+      sessionId,
+      userId,
+    });
   }
-  if (Object.keys(analyticsToSet).length > 0) {
-    pipeline.hset(analyticsKey, analyticsToSet);
-    pipeline.expire(analyticsKey, 7200);
-    hasRedisMutations = true;
-  }
-  for (const qId of toDelete) {
-    pipeline.hdel(redisKey, qId);
-    hasRedisMutations = true;
-  }
-  if (hasRedisMutations) {
-    pipeline.expire(redisKey, 7200);
-    await pipeline.exec();
-  }
-
-  return { success: true };
 }
 
 /**
@@ -2831,50 +2847,72 @@ export async function submitExamForUserClient(
     skipPostFinalizeSideEffects?: boolean;
   }
 ) {
-  const submitLimit = await submitExamRateLimit.limit(
-    `submit-exam:${userId}:${sessionId}`
-  );
-  if (!submitLimit.success) {
-    return { error: "Хэт олон илгээх оролдлого байна. Түр хүлээгээд дахин оролдоно уу." };
-  }
+  const submitStartedAt = Date.now();
+  try {
+    const submitLimit = await submitExamRateLimit.limit(
+      `submit-exam:${userId}:${sessionId}`
+    );
+    if (!submitLimit.success) {
+      return {
+        error:
+          "Хэт олон илгээх оролдлого байна. Түр хүлээгээд дахин оролдоно уу.",
+      };
+    }
 
-  // Session авах
-  const { data: session } = await supabase
-    .from("exam_sessions")
-    .select("id, exam_id, status, total_score, max_score")
-    .eq("id", sessionId)
-    .eq("user_id", userId)
-    .maybeSingle();
+    // Session авах
+    const { data: session } = await supabase
+      .from("exam_sessions")
+      .select("id, exam_id, status, total_score, max_score")
+      .eq("id", sessionId)
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (!session) return { error: "Session олдсонгүй" };
+    if (!session) return { error: "Session олдсонгүй" };
 
-  if (session.status !== "in_progress") {
-    await cacheSessionMeta(sessionId, userId, {
-      status: String(session.status),
-      examId: String(session.exam_id),
+    if (session.status !== "in_progress") {
+      await cacheSessionMeta(sessionId, userId, {
+        status: String(session.status),
+        examId: String(session.exam_id),
+      });
+      const totalScore = Number(session.total_score ?? 0);
+      const maxScore = Number(session.max_score ?? 0);
+      return {
+        success: true,
+        totalScore,
+        maxScore,
+        percentage: getPercentage(totalScore, maxScore),
+      };
+    }
+
+    const examSubmitBurst = await examSubmitBurstRateLimit.limit(
+      `exam-submit:${String(session.exam_id)}`
+    );
+    if (!examSubmitBurst.success) {
+      return {
+        error:
+          "Олон сурагч нэгэн зэрэг илгээж байна. 1-3 секунд хүлээгээд дахин оролдоно уу.",
+      };
+    }
+
+    // Submit дээр client-ээс ирсэн delta-г authoritative гэж үзнэ.
+    // Ингэснээр өмнө эхэлсэн autosave удааширсан үед submit түүнд түгжигдэхгүй.
+    return finalizeSessionAttempt(supabase, {
+      sessionId,
+      examId: session.exam_id,
+      userId,
+      reason: "submit",
+      clientAnswers,
+      clientAnswerAnalytics,
+      skipPostFinalizeSideEffects:
+        options?.skipPostFinalizeSideEffects ?? false,
     });
-    const totalScore = Number(session.total_score ?? 0);
-    const maxScore = Number(session.max_score ?? 0);
-    return {
-      success: true,
-      totalScore,
-      maxScore,
-      percentage: getPercentage(totalScore, maxScore),
-    };
+  } finally {
+    logStudentPerf("submitExam", submitStartedAt, 500, {
+      answerCount: Object.keys(clientAnswers ?? {}).length,
+      sessionId,
+      userId,
+    });
   }
-
-  // Submit дээр client-ээс ирсэн delta-г authoritative гэж үзнэ.
-  // Ингэснээр өмнө эхэлсэн autosave удааширсан үед submit түүнд түгжигдэхгүй.
-  return finalizeSessionAttempt(supabase, {
-    sessionId,
-    examId: session.exam_id,
-    userId,
-    reason: "submit",
-    clientAnswers,
-    clientAnswerAnalytics,
-    skipPostFinalizeSideEffects:
-      options?.skipPostFinalizeSideEffects ?? false,
-  });
 }
 
 /**
@@ -2896,6 +2934,30 @@ export async function logProctorEvent(
   if ("error" in resolved) return resolved;
 
   const { supabase, userId } = resolved;
+
+  const shouldBypassDedupe =
+    eventType === "challenge_failed" ||
+    eventType === "challenge_passed" ||
+    eventType === "challenge_required" ||
+    eventType === "identity_failed" ||
+    eventType === "identity_verified" ||
+    eventType === "spot_check_failed" ||
+    eventType === "spot_check_passed" ||
+    eventType === "spot_check_required";
+
+  if (!shouldBypassDedupe) {
+    const dedupeAccepted = await redis.set(
+      getProctorEventDedupeKey(sessionId, eventType, metadata),
+      "1",
+      {
+        ex: 5,
+        nx: true,
+      },
+    );
+    if (!dedupeAccepted) {
+      return { success: true, skipped: true };
+    }
+  }
 
   const limitResult = await proctorEventRateLimit.limit(
     `proctor:${userId}:${sessionId}:${eventType}`
@@ -3059,29 +3121,41 @@ export async function recordExamHeartbeat(
   sessionId: string,
   runtimeToken?: string | null,
 ) {
-  const verifiedToken = verifyStudentRuntimeToken(runtimeToken, sessionId);
+  const heartbeatStartedAt = Date.now();
+  try {
+    const verifiedToken = verifyStudentRuntimeToken(runtimeToken, sessionId);
 
-  if (!verifiedToken) {
-    const resolved = await resolveStudentRuntimeActionContext(
-      sessionId,
-      runtimeToken,
-    );
-    if ("error" in resolved) return resolved;
+    if (!verifiedToken) {
+      const resolved = await resolveStudentRuntimeActionContext(
+        sessionId,
+        runtimeToken,
+      );
+      if ("error" in resolved) return resolved;
 
-    const { supabase, userId } = resolved;
+      const { supabase, userId } = resolved;
 
-    const session = await getSessionMeta(supabase, sessionId, userId);
-    if (!session) return { error: "Session олдсонгүй" };
-    if (session.status !== "in_progress") {
-      return { success: true, skipped: true };
+      const session = await getSessionMeta(supabase, sessionId, userId);
+      if (!session) return { error: "Session олдсонгүй" };
+      if (session.status !== "in_progress") {
+        return { success: true, skipped: true };
+      }
     }
+
+    await redis.set(
+      getSessionHeartbeatCacheKey(sessionId),
+      new Date().toISOString(),
+      {
+        ex: 45,
+      },
+    );
+
+    return { success: true };
+  } finally {
+    logStudentPerf("recordExamHeartbeat", heartbeatStartedAt, 150, {
+      sessionId,
+      usedRuntimeToken: Boolean(runtimeToken),
+    });
   }
-
-  await redis.set(getSessionHeartbeatCacheKey(sessionId), new Date().toISOString(), {
-    ex: 45,
-  });
-
-  return { success: true };
 }
 
 export async function getIdentityEnrollment() {
@@ -3296,6 +3370,7 @@ export async function requestEssayReview(
  * Шалгалтын үр дүнг DB-ээс авах (URL param биш)
  */
 export async function getExamResult(examId: string) {
+  const getExamResultStartedAt = Date.now();
   const supabase = await createClient();
   const admin = createAdminClient();
   const {
@@ -3303,52 +3378,10 @@ export async function getExamResult(examId: string) {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const sessionSelect =
-    "id, status, started_at, total_score, max_score, submitted_at, attempt_number, exam_id, exams(title, passing_score)";
-  const { data: initialSessions, error: sessionError } = await supabase
-    .from("exam_sessions")
-    .select(sessionSelect)
-    .eq("exam_id", examId)
-    .eq("user_id", user.id)
-    .in("status", ["in_progress", "submitted", "graded", "timed_out"])
-    .order("attempt_number", { ascending: false });
-
-  if (sessionError) {
-    console.error("[getExamResult] session query error:", sessionError.message);
-    return null;
-  }
-
-  let sessions = initialSessions ?? [];
-  let latestSession = pickLatestAttempt(sessions);
-  if (!latestSession) return null;
-
-  if (latestSession.status === "in_progress") {
-    const exam = await getEffectiveExamAccessForStudent(
-      supabase,
-      user.id,
-      examId,
-      toStudentAttemptSummary(latestSession),
-    );
-    if (!exam) return null;
-
-    if (!isSessionExpiredForExam(latestSession.started_at ?? null, exam)) {
-      return null;
-    }
-
-    const finalized = await finalizeSessionAttempt(supabase, {
-      sessionId: latestSession.id,
-      examId,
-      userId: user.id,
-      reason: "timeout",
-      skipPostFinalizeSideEffects: true,
-    });
-
-    if ("error" in finalized) {
-      console.error("[getExamResult] finalize timeout error:", finalized.error);
-      return null;
-    }
-
-    const { data: refreshedSessions, error: refreshedSessionError } = await supabase
+  try {
+    const sessionSelect =
+      "id, status, started_at, total_score, max_score, submitted_at, attempt_number, exam_id, exams(title, passing_score)";
+    const { data: initialSessions, error: sessionError } = await supabase
       .from("exam_sessions")
       .select(sessionSelect)
       .eq("exam_id", examId)
@@ -3356,65 +3389,41 @@ export async function getExamResult(examId: string) {
       .in("status", ["in_progress", "submitted", "graded", "timed_out"])
       .order("attempt_number", { ascending: false });
 
-    if (refreshedSessionError) {
-      console.error(
-        "[getExamResult] refreshed session query error:",
-        refreshedSessionError.message
-      );
+    if (sessionError) {
+      console.error("[getExamResult] session query error:", sessionError.message);
       return null;
     }
 
-    sessions = refreshedSessions ?? [];
-    latestSession = pickLatestAttempt(sessions);
+    let sessions = initialSessions ?? [];
+    let latestSession = pickLatestAttempt(sessions);
     if (!latestSession) return null;
-  }
 
-  const effectiveExam = await getEffectiveExamAccessForStudent(
-    supabase,
-    user.id,
-    examId,
-    toStudentAttemptSummary(latestSession),
-  );
-  if (!effectiveExam) {
-    return null;
-  }
-
-  if (effectiveExam.is_result_released) {
-    const latestPendingReleasedSession = pickLatestAttempt(
-      sessions.filter(
-        (session) =>
-          isFinalizedAttemptStatus(String(session.status ?? "")) &&
-          isSessionScorePending(session),
-      ),
-    );
-
-    const materialized = latestPendingReleasedSession
-      ? await materializeSessionScoresIfNeeded(admin, {
-          sessionId: String(latestPendingReleasedSession.id),
-          examId,
-          userId: user.id,
-          skipSideEffects: true,
-        })
-      : null;
-
-    if (materialized && "error" in materialized) {
-      console.error(
-        "[getExamResult] materialize released session error:",
-        materialized.error,
+    if (latestSession.status === "in_progress") {
+      const exam = await getEffectiveExamAccessForStudent(
+        supabase,
+        user.id,
+        examId,
+        toStudentAttemptSummary(latestSession),
       );
-      // Refresh sessions even on error — a prior run may have already set total_score
-      const { data: refreshedAfterError } = await supabase
-        .from("exam_sessions")
-        .select(sessionSelect)
-        .eq("exam_id", examId)
-        .eq("user_id", user.id)
-        .in("status", ["in_progress", "submitted", "graded", "timed_out"])
-        .order("attempt_number", { ascending: false });
-      if (refreshedAfterError) {
-        sessions = refreshedAfterError;
-        latestSession = pickLatestAttempt(sessions) ?? latestSession;
+      if (!exam) return null;
+
+      if (!isSessionExpiredForExam(latestSession.started_at ?? null, exam)) {
+        return null;
       }
-    } else if (materialized && !materialized.gradingPending) {
+
+      const finalized = await finalizeSessionAttempt(supabase, {
+        sessionId: latestSession.id,
+        examId,
+        userId: user.id,
+        reason: "timeout",
+        skipPostFinalizeSideEffects: true,
+      });
+
+      if ("error" in finalized) {
+        console.error("[getExamResult] finalize timeout error:", finalized.error);
+        return null;
+      }
+
       const { data: refreshedSessions, error: refreshedSessionError } =
         await supabase
           .from("exam_sessions")
@@ -3427,7 +3436,7 @@ export async function getExamResult(examId: string) {
       if (refreshedSessionError) {
         console.error(
           "[getExamResult] refreshed session query error:",
-          refreshedSessionError.message,
+          refreshedSessionError.message
         );
         return null;
       }
@@ -3436,106 +3445,240 @@ export async function getExamResult(examId: string) {
       latestSession = pickLatestAttempt(sessions);
       if (!latestSession) return null;
     }
-  }
 
-  const finalizedSessions = sessions.filter((session) =>
-    isFinalizedAttemptStatus(String(session.status ?? ""))
-  );
-  const bestSession = pickBestAttempt(finalizedSessions);
-  if (!bestSession) {
-    return null;
-  }
-
-  const canViewDetailedFeedback = Boolean(effectiveExam.can_view_results);
-
-  if (!canViewDetailedFeedback) {
-    return {
-      ...bestSession,
-      answers: [],
-      best_attempt_number: Number(bestSession.attempt_number ?? 0),
-      latest_attempt_number: Number(latestSession.attempt_number ?? 0),
-      can_view_detailed_feedback: false,
-      can_attempt_again: canAttemptExamAgain(effectiveExam.myLifecycleStatus),
-      can_view_results: false,
-      result_release_at: effectiveExam.result_release_at,
-      grading_pending: isSessionScorePending(bestSession),
-      has_pending_review: false,
-      result_locked_reason: effectiveExam.result_locked_reason,
-    };
-  }
-
-  const snapshot = await getStoredPublishedExamSnapshot(supabase, examId);
-  const snapshotQuestionMap = getSnapshotQuestionMap(snapshot);
-
-  const [{ data: answers }, { data: questions }, questionVariantMap] =
-    await Promise.all([
-    supabase
-      .from("answers")
-      .select(
-        "id, question_id, answer, score, is_correct, feedback, ai_score, ai_feedback, score_source, review_status, review_requested_at, review_reason, review_resolved_at, questions(id, type, content, content_html, image_url, options, correct_answer, points, order_index, explanation)"
-      )
-      .eq("session_id", bestSession.id)
-      .order("questions(order_index)", { ascending: true }),
-    snapshot
-      ? Promise.resolve({
-          data: snapshot.questions.map((question) => ({
-            id: question.id,
-            type: question.type,
-            content: question.content,
-            content_html: question.content_html,
-            image_url: question.image_url,
-            options: question.options,
-            correct_answer: question.correct_answer,
-            points: question.points,
-            order_index: question.order_index,
-            explanation: question.explanation,
-          })),
-        })
-      : supabase
-          .from("questions")
-          .select(
-            "id, type, content, content_html, image_url, options, correct_answer, points, order_index, explanation"
-          )
-          .eq("exam_id", examId)
-          .order("order_index", { ascending: true }),
-      getSessionQuestionVariantMap(supabase, bestSession.id),
-    ]);
-
-  const answerMap = new Map<
-    string,
-    {
-      id: string;
-      question_id: string;
-      answer: string | null;
-      score: number | null;
-      is_correct: boolean | null;
-      feedback: string | null;
-      ai_score: number | null;
-      ai_feedback: string | null;
-      score_source: AnswerScoreSource;
-      review_status: AnswerReviewStatus;
-      review_requested_at: string | null;
-      review_reason: string | null;
-      review_resolved_at: string | null;
-      can_request_review: boolean;
-      questions: Record<string, unknown> | null;
+    const effectiveExam = await getEffectiveExamAccessForStudent(
+      supabase,
+      user.id,
+      examId,
+      toStudentAttemptSummary(latestSession),
+    );
+    if (!effectiveExam) {
+      return null;
     }
-  >();
 
-  for (const answer of answers ?? []) {
-    const questionId = String(answer.question_id);
-    const snapshotQuestion = snapshotQuestionMap.get(questionId);
-    const baseQuestion =
-      ((snapshotQuestion as unknown) as Record<string, unknown> | null) ??
-      (getRelationObject(
-        answer.questions as
-          | Record<string, unknown>
-          | Record<string, unknown>[]
-          | null
-      ) as Record<string, unknown> | null);
-    const questionWithVariant = baseQuestion
-      ? (applyStoredVariantToQuestion(
-          baseQuestion as {
+    if (effectiveExam.is_result_released) {
+      const latestPendingReleasedSession = pickLatestAttempt(
+        sessions.filter(
+          (session) =>
+            isFinalizedAttemptStatus(String(session.status ?? "")) &&
+            isSessionScorePending(session),
+        ),
+      );
+
+      const materialized = latestPendingReleasedSession
+        ? await materializeSessionScoresIfNeeded(admin, {
+            sessionId: String(latestPendingReleasedSession.id),
+            examId,
+            userId: user.id,
+            skipSideEffects: true,
+          })
+        : null;
+
+      if (materialized && "error" in materialized) {
+        console.error(
+          "[getExamResult] materialize released session error:",
+          materialized.error,
+        );
+        // Refresh sessions even on error — a prior run may have already set total_score
+        const { data: refreshedAfterError } = await supabase
+          .from("exam_sessions")
+          .select(sessionSelect)
+          .eq("exam_id", examId)
+          .eq("user_id", user.id)
+          .in("status", ["in_progress", "submitted", "graded", "timed_out"])
+          .order("attempt_number", { ascending: false });
+        if (refreshedAfterError) {
+          sessions = refreshedAfterError;
+          latestSession = pickLatestAttempt(sessions) ?? latestSession;
+        }
+      } else if (materialized && !materialized.gradingPending) {
+        const { data: refreshedSessions, error: refreshedSessionError } =
+          await supabase
+            .from("exam_sessions")
+            .select(sessionSelect)
+            .eq("exam_id", examId)
+            .eq("user_id", user.id)
+            .in("status", ["in_progress", "submitted", "graded", "timed_out"])
+            .order("attempt_number", { ascending: false });
+
+        if (refreshedSessionError) {
+          console.error(
+            "[getExamResult] refreshed session query error:",
+            refreshedSessionError.message,
+          );
+          return null;
+        }
+
+        sessions = refreshedSessions ?? [];
+        latestSession = pickLatestAttempt(sessions);
+        if (!latestSession) return null;
+      }
+    }
+
+    const finalizedSessions = sessions.filter((session) =>
+      isFinalizedAttemptStatus(String(session.status ?? ""))
+    );
+    const bestSession = pickBestAttempt(finalizedSessions);
+    if (!bestSession) {
+      return null;
+    }
+
+    const canViewDetailedFeedback = Boolean(effectiveExam.can_view_results);
+
+    if (!canViewDetailedFeedback) {
+      return {
+        ...bestSession,
+        answers: [],
+        best_attempt_number: Number(bestSession.attempt_number ?? 0),
+        latest_attempt_number: Number(latestSession.attempt_number ?? 0),
+        can_view_detailed_feedback: false,
+        can_attempt_again: canAttemptExamAgain(effectiveExam.myLifecycleStatus),
+        can_view_results: false,
+        result_release_at: effectiveExam.result_release_at,
+        grading_pending: isSessionScorePending(bestSession),
+        has_pending_review: false,
+        result_locked_reason: effectiveExam.result_locked_reason,
+      };
+    }
+
+    const snapshot = await getStoredPublishedExamSnapshot(supabase, examId);
+    const snapshotQuestionMap = getSnapshotQuestionMap(snapshot);
+
+    const [{ data: answers }, { data: questions }, questionVariantMap] =
+      await Promise.all([
+        supabase
+          .from("answers")
+          .select(
+            "id, question_id, answer, score, is_correct, feedback, ai_score, ai_feedback, score_source, review_status, review_requested_at, review_reason, review_resolved_at, questions(id, type, content, content_html, image_url, options, correct_answer, points, order_index, explanation)"
+          )
+          .eq("session_id", bestSession.id)
+          .order("questions(order_index)", { ascending: true }),
+        snapshot
+          ? Promise.resolve({
+              data: snapshot.questions.map((question) => ({
+                id: question.id,
+                type: question.type,
+                content: question.content,
+                content_html: question.content_html,
+                image_url: question.image_url,
+                options: question.options,
+                correct_answer: question.correct_answer,
+                points: question.points,
+                order_index: question.order_index,
+                explanation: question.explanation,
+              })),
+            })
+          : supabase
+              .from("questions")
+              .select(
+                "id, type, content, content_html, image_url, options, correct_answer, points, order_index, explanation"
+              )
+              .eq("exam_id", examId)
+              .order("order_index", { ascending: true }),
+        getSessionQuestionVariantMap(supabase, bestSession.id),
+      ]);
+
+    const answerMap = new Map<
+      string,
+      {
+        id: string;
+        question_id: string;
+        answer: string | null;
+        score: number | null;
+        is_correct: boolean | null;
+        feedback: string | null;
+        ai_score: number | null;
+        ai_feedback: string | null;
+        score_source: AnswerScoreSource;
+        review_status: AnswerReviewStatus;
+        review_requested_at: string | null;
+        review_reason: string | null;
+        review_resolved_at: string | null;
+        can_request_review: boolean;
+        questions: Record<string, unknown> | null;
+      }
+    >();
+
+    for (const answer of answers ?? []) {
+      const questionId = String(answer.question_id);
+      const snapshotQuestion = snapshotQuestionMap.get(questionId);
+      const baseQuestion =
+        ((snapshotQuestion as unknown) as Record<string, unknown> | null) ??
+        (getRelationObject(
+          answer.questions as
+            | Record<string, unknown>
+            | Record<string, unknown>[]
+            | null
+        ) as Record<string, unknown> | null);
+      const questionWithVariant = baseQuestion
+        ? (applyStoredVariantToQuestion(
+            baseQuestion as {
+              type: string;
+              content: string;
+              content_html: string | null;
+              image_url: string | null;
+              options: string[] | null;
+              correct_answer?: string | null;
+              explanation?: string | null;
+            },
+            questionVariantMap.get(questionId)
+          ) as unknown as Record<string, unknown>)
+        : null;
+
+      answerMap.set(questionId, {
+        id: String(answer.id),
+        question_id: questionId,
+        answer: (answer.answer as string | null) ?? null,
+        score: (answer.score as number | null) ?? null,
+        is_correct: (answer.is_correct as boolean | null) ?? null,
+        feedback: (answer.feedback as string | null) ?? null,
+        ai_score: (answer.ai_score as number | null) ?? null,
+        ai_feedback: (answer.ai_feedback as string | null) ?? null,
+        score_source: normalizeAnswerScoreSource(answer.score_source),
+        review_status: normalizeAnswerReviewStatus(answer.review_status),
+        review_requested_at:
+          (answer.review_requested_at as string | null) ?? null,
+        review_reason: (answer.review_reason as string | null) ?? null,
+        review_resolved_at:
+          (answer.review_resolved_at as string | null) ?? null,
+        can_request_review: canRequestEssayReview({
+          questionType: String(questionWithVariant?.type ?? ""),
+          scoreSource: normalizeAnswerScoreSource(answer.score_source),
+          reviewStatus: normalizeAnswerReviewStatus(answer.review_status),
+          canViewResults: canViewDetailedFeedback,
+          gradingPending: isSessionScorePending(bestSession),
+        }),
+        questions: questionWithVariant,
+      });
+    }
+
+    const fullBreakdown = (questions ?? []).map((question) => {
+      const questionId = String(question.id);
+      const existingAnswer = answerMap.get(questionId);
+
+      if (existingAnswer) {
+        return existingAnswer;
+      }
+
+      return {
+        id: `missing:${questionId}`,
+        question_id: questionId,
+        answer: null,
+        score: 0,
+        is_correct: null,
+        feedback: null,
+        ai_score: null,
+        ai_feedback: null,
+        score_source: "objective" as const,
+        review_status: "none" as const,
+        review_requested_at: null,
+        review_reason: null,
+        review_resolved_at: null,
+        can_request_review: false,
+        questions: applyStoredVariantToQuestion(
+          ((((snapshotQuestionMap.get(questionId) ?? null) as unknown) as
+            | Record<string, unknown>
+            | null) ?? ((question as unknown) as Record<string, unknown>)) as {
             type: string;
             content: string;
             content_html: string | null;
@@ -3545,91 +3688,33 @@ export async function getExamResult(examId: string) {
             explanation?: string | null;
           },
           questionVariantMap.get(questionId)
-        ) as unknown as Record<string, unknown>)
-      : null;
-
-    answerMap.set(questionId, {
-      id: String(answer.id),
-      question_id: questionId,
-      answer: (answer.answer as string | null) ?? null,
-      score: (answer.score as number | null) ?? null,
-      is_correct: (answer.is_correct as boolean | null) ?? null,
-      feedback: (answer.feedback as string | null) ?? null,
-      ai_score: (answer.ai_score as number | null) ?? null,
-      ai_feedback: (answer.ai_feedback as string | null) ?? null,
-      score_source: normalizeAnswerScoreSource(answer.score_source),
-      review_status: normalizeAnswerReviewStatus(answer.review_status),
-      review_requested_at: (answer.review_requested_at as string | null) ?? null,
-      review_reason: (answer.review_reason as string | null) ?? null,
-      review_resolved_at: (answer.review_resolved_at as string | null) ?? null,
-      can_request_review: canRequestEssayReview({
-        questionType: String(questionWithVariant?.type ?? ""),
-        scoreSource: normalizeAnswerScoreSource(answer.score_source),
-        reviewStatus: normalizeAnswerReviewStatus(answer.review_status),
-        canViewResults: canViewDetailedFeedback,
-        gradingPending: isSessionScorePending(bestSession),
-      }),
-      questions: questionWithVariant,
+        ) as unknown as Record<string, unknown>,
+      };
     });
-  }
 
-  const fullBreakdown = (questions ?? []).map((question) => {
-    const questionId = String(question.id);
-    const existingAnswer = answerMap.get(questionId);
-
-    if (existingAnswer) {
-      return existingAnswer;
-    }
+    const hasPendingReview = fullBreakdown.some(
+      (answer) => answer.review_status === "requested",
+    );
 
     return {
-      id: `missing:${questionId}`,
-      question_id: questionId,
-      answer: null,
-      score: 0,
-      is_correct: null,
-      feedback: null,
-      ai_score: null,
-      ai_feedback: null,
-      score_source: "objective" as const,
-      review_status: "none" as const,
-      review_requested_at: null,
-      review_reason: null,
-      review_resolved_at: null,
-      can_request_review: false,
-      questions: applyStoredVariantToQuestion(
-        ((((snapshotQuestionMap.get(questionId) ?? null) as unknown) as
-          | Record<string, unknown>
-          | null) ?? ((question as unknown) as Record<string, unknown>)) as {
-          type: string;
-          content: string;
-          content_html: string | null;
-          image_url: string | null;
-          options: string[] | null;
-          correct_answer?: string | null;
-          explanation?: string | null;
-        },
-        questionVariantMap.get(questionId)
-      ) as unknown as Record<string, unknown>,
+      ...bestSession,
+      answers: fullBreakdown,
+      best_attempt_number: Number(bestSession.attempt_number ?? 0),
+      latest_attempt_number: Number(latestSession.attempt_number ?? 0),
+      can_view_detailed_feedback: true,
+      can_attempt_again: false,
+      can_view_results: true,
+      result_release_at: effectiveExam.result_release_at,
+      grading_pending: isSessionScorePending(bestSession),
+      has_pending_review: hasPendingReview,
+      result_locked_reason: null,
     };
-  });
-
-  const hasPendingReview = fullBreakdown.some(
-    (answer) => answer.review_status === "requested",
-  );
-
-  return {
-    ...bestSession,
-    answers: fullBreakdown,
-    best_attempt_number: Number(bestSession.attempt_number ?? 0),
-    latest_attempt_number: Number(latestSession.attempt_number ?? 0),
-    can_view_detailed_feedback: true,
-    can_attempt_again: false,
-    can_view_results: true,
-    result_release_at: effectiveExam.result_release_at,
-    grading_pending: isSessionScorePending(bestSession),
-    has_pending_review: hasPendingReview,
-    result_locked_reason: null,
-  };
+  } finally {
+    logStudentPerf("getExamResult", getExamResultStartedAt, 300, {
+      examId,
+      userId: user.id,
+    });
+  }
 }
 
 /**

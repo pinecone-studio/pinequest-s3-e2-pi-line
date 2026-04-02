@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getExamById } from "@/lib/exam/actions";
+import { getExamEditorById } from "@/lib/exam/actions";
 import { getTeacherSubjects } from "@/lib/subject/actions";
 import { getExamCreationGroups } from "@/lib/group/actions";
 import ExamForm from "@/app/educator/create-exam/_features/ExamForm";
@@ -17,7 +17,7 @@ export default async function EditExamPage({ params, searchParams }: Props) {
   const { id } = await params;
   const { error: pageError, step } = await searchParams;
   const [exam, subjects, groups] = await Promise.all([
-    getExamById(id),
+    getExamEditorById(id),
     getTeacherSubjects(),
     getExamCreationGroups(),
   ]);

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { extractQuestionTextFromImageBytes } from "@/lib/ai/extract-image-text";
+import { redis } from "@/lib/redis";
 import { createClient } from "@/lib/supabase/server";
 import {
   deleteQuestionVariantPresets,
@@ -19,7 +20,6 @@ import {
 } from "@/lib/question/import";
 import { buildQuestionImportDraftsFromWord } from "@/lib/question/word-import";
 import {
-  attachPassagesToQuestions,
   getQuestionPassagesByExam as loadQuestionPassagesByExam,
 } from "@/lib/question-passages";
 import type {
@@ -30,6 +30,7 @@ import type {
   QuestionImportDraft,
   QuestionBankSummary,
   QuestionBankVisibility,
+  QuestionPassage,
   QuestionType,
   SampleExam,
 } from "@/types";
@@ -59,6 +60,10 @@ const QUESTION_BANK_GOVERNANCE_ERROR =
   "Question bank governance feature ашиглахын өмнө хамгийн сүүлийн DB migration-аа apply хийнэ үү.";
 const QUESTION_BANK_USAGE_TRACKING_WARNING =
   "Асуулт шалгалт руу амжилттай орлоо, гэхдээ ашиглалтын тоо шинэчлэгдсэнгүй. Usage tracking migration-аа apply хийгээд schema cache-аа refresh хийнэ үү.";
+
+function getEducatorQuestionPageCacheKey(examId: string) {
+  return `educator:exam:${examId}:question-page`;
+}
 
 function isQuestionBankVisibility(
   value: string
@@ -419,17 +424,114 @@ function buildQuestionPayload(
 
 async function getOwnedExam(
   examId: string,
-  userId: string
+  userId: string,
+  existingSupabase?: SupabaseServerClient,
 ) {
-  const supabase = await createClient();
+  const supabase = existingSupabase ?? (await createClient());
   const { data: exam } = await supabase
     .from("exams")
-    .select("id, title, subject_id, is_published")
+    .select("id, title, subject_id, is_published, start_time")
     .eq("id", examId)
     .eq("created_by", userId)
     .maybeSingle();
 
   return { supabase, exam };
+}
+
+function attachKnownPassagesToQuestions<T extends { passage_id?: string | null }>(
+  questions: T[],
+  passages: QuestionPassage[],
+) {
+  const passageMap = new Map(
+    passages.map((passage) => [String(passage.id), passage] as const),
+  );
+
+  return questions.map((question) => ({
+    ...question,
+    question_passages:
+      question.passage_id != null
+        ? passageMap.get(String(question.passage_id)) ?? null
+        : null,
+  }));
+}
+
+async function clearEducatorQuestionPageCache(examId: string) {
+  try {
+    await redis.del(getEducatorQuestionPageCacheKey(examId));
+  } catch {}
+}
+
+async function revalidateEducatorQuestionPage(examId: string) {
+  await clearEducatorQuestionPageCache(examId);
+  revalidatePath(`/educator/exams/${examId}/questions`);
+}
+
+export async function getQuestionPageData(examId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  try {
+    const cached = await redis.get(getEducatorQuestionPageCacheKey(examId));
+    if (cached) {
+      const parsed =
+        typeof cached === "string"
+          ? (JSON.parse(cached) as {
+              exam: {
+                id: string;
+                is_published: boolean;
+                start_time: string | null;
+                subject_id: string | null;
+                title: string;
+              };
+              passages: QuestionPassage[];
+              questions: Array<Record<string, unknown>>;
+            })
+          : (cached as {
+              exam: {
+                id: string;
+                is_published: boolean;
+                start_time: string | null;
+                subject_id: string | null;
+                title: string;
+              };
+              passages: QuestionPassage[];
+              questions: Array<Record<string, unknown>>;
+            });
+
+      if (parsed?.exam && Array.isArray(parsed.questions) && Array.isArray(parsed.passages)) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
+  if (!exam) return null;
+
+  const [{ data: questionRows }, passages] = await Promise.all([
+    supabase
+      .from("questions")
+      .select("*")
+      .eq("exam_id", examId)
+      .order("order_index", { ascending: true }),
+    loadQuestionPassagesByExam(supabase, examId),
+  ]);
+
+  const payload = {
+    exam,
+    questions: attachKnownPassagesToQuestions(questionRows ?? [], passages),
+    passages,
+  };
+
+  try {
+    await redis.set(getEducatorQuestionPageCacheKey(examId), JSON.stringify(payload), {
+      ex: 30,
+    });
+  } catch {}
+
+  return payload;
 }
 
 async function resolvePassageId(
@@ -470,7 +572,7 @@ export async function addQuestion(examId: string, formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтын асуултыг өөрчлөх боломжгүй" };
@@ -597,7 +699,7 @@ export async function addQuestion(examId: string, formData: FormData) {
     }
   }
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
@@ -608,7 +710,7 @@ export async function addQuestionPassage(examId: string, formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтад passage block нэмэх боломжгүй" };
@@ -655,7 +757,7 @@ export async function addQuestionPassage(examId: string, formData: FormData) {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
@@ -666,7 +768,7 @@ export async function deleteQuestionPassage(examId: string, passageId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтын passage block-ийг устгах боломжгүй" };
@@ -701,7 +803,7 @@ export async function deleteQuestionPassage(examId: string, passageId: string) {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
@@ -716,7 +818,7 @@ export async function updateQuestionPassage(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтын passage block-ийг өөрчлөх боломжгүй" };
@@ -758,7 +860,7 @@ export async function updateQuestionPassage(
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
@@ -769,7 +871,7 @@ export async function deleteQuestion(questionId: string, examId: string) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтын асуултыг устгах боломжгүй" };
@@ -783,7 +885,7 @@ export async function deleteQuestion(questionId: string, examId: string) {
 
   if (error) return { error: error.message };
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
@@ -798,7 +900,7 @@ export async function updateQuestion(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтын асуултыг өөрчлөх боломжгүй" };
@@ -918,40 +1020,18 @@ export async function updateQuestion(
     };
   }
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
 export async function getQuestionsByExam(examId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { exam } = await getOwnedExam(examId, user.id);
-  if (!exam) return [];
-
-  const { data } = await supabase
-    .from("questions")
-    .select("*")
-    .eq("exam_id", examId)
-    .order("order_index", { ascending: true });
-
-  return attachPassagesToQuestions(supabase, data ?? []);
+  const payload = await getQuestionPageData(examId);
+  return payload?.questions ?? [];
 }
 
 export async function getQuestionPassagesByExam(examId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { exam } = await getOwnedExam(examId, user.id);
-  if (!exam) return [];
-
-  return loadQuestionPassagesByExam(supabase, examId);
+  const payload = await getQuestionPageData(examId);
+  return payload?.passages ?? [];
 }
 
 export async function getQuestionBankCatalogData() {
@@ -1104,7 +1184,7 @@ export async function importQuestionsFromBank(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтад сангаас асуулт нэмэх боломжгүй" };
@@ -1206,7 +1286,7 @@ export async function importQuestionsFromBank(
   );
   const usageError = usageResults.find((result) => result.error)?.error ?? null;
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   revalidatePath("/educator/question-bank");
   revalidatePath("/educator/question-bank/private");
 
@@ -1234,7 +1314,7 @@ export async function importQuestionFromBank(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
 
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
@@ -1301,7 +1381,7 @@ export async function importQuestionFromBank(
     { p_item_id: bankQuestionId }
   );
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   revalidatePath("/educator/question-bank");
   revalidatePath("/educator/question-bank/private");
   if (usageError) {
@@ -1327,7 +1407,7 @@ export async function importSampleExamToExam(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтад жишиг шалгалт оруулах боломжгүй" };
@@ -1449,7 +1529,7 @@ export async function importSampleExamToExam(
     return { error: insertError.message };
   }
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true };
 }
 
@@ -2049,7 +2129,7 @@ export async function parseImportedQuestionFile(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтад file import хийх боломжгүй" };
@@ -2105,7 +2185,7 @@ export async function importParsedQuestions(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Нэвтрээгүй байна" };
 
-  const { exam } = await getOwnedExam(examId, user.id);
+  const { exam } = await getOwnedExam(examId, user.id, supabase);
   if (!exam) return { error: "Шалгалт олдсонгүй" };
   if (exam.is_published) {
     return { error: "Нийтлэгдсэн шалгалтад file import хийх боломжгүй" };
@@ -2241,6 +2321,6 @@ export async function importParsedQuestions(
     return { error: error.message, drafts: revalidatedDrafts };
   }
 
-  revalidatePath(`/educator/exams/${examId}/questions`);
+  await revalidateEducatorQuestionPage(examId);
   return { success: true, count: insertRows.length };
 }

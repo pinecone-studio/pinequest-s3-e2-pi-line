@@ -40,6 +40,10 @@ import { cn } from "@/lib/utils";
 import type { ExamRuntimeReadiness } from "./runtime-readiness";
 
 const REQUIRE_SEB = false;
+const EXAM_RUNTIME_FLUSH_PATH = "/api/exam-runtime/flush";
+const FREE_TEXT_DRAFT_DEBOUNCE_MS = 750;
+const STRUCTURED_DRAFT_DEBOUNCE_MS = 150;
+const STRUCTURED_CHECKPOINT_DEBOUNCE_MS = 250;
 
 function isSEBBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -202,6 +206,45 @@ function normalizeDraftAnswer(questionType: string, answer: string) {
   }
 
   return answer.trim() ? answer : null;
+}
+
+function isHighChurnQuestionType(questionType: string) {
+  return questionType === "essay" || questionType === "fill_blank";
+}
+
+function sendExamRuntimeFlush(body: {
+  answerAnalytics: Record<string, AnswerChangeAnalytics>;
+  answers: Record<string, string>;
+  reason: string;
+  runtimeToken: string;
+  sessionId: string;
+}) {
+  if (typeof window === "undefined") return false;
+
+  const payload = JSON.stringify(body);
+  const blob = new Blob([payload], { type: "application/json" });
+
+  if (typeof navigator.sendBeacon === "function") {
+    const accepted = navigator.sendBeacon(EXAM_RUNTIME_FLUSH_PATH, blob);
+    if (accepted) {
+      return true;
+    }
+  }
+
+  try {
+    void fetch(EXAM_RUNTIME_FLUSH_PATH, {
+      method: "POST",
+      body: payload,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "same-origin",
+      keepalive: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isQuestionAnswered(question: QuestionItem, answer: string | undefined) {
@@ -840,6 +883,9 @@ export default function ExamTaker({
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const lastCheckpointRef = useRef<Record<string, string>>(savedAnswers);
   const isCheckpointingRef = useRef(false);
+  const checkpointTimeoutRef = useRef<number | null>(null);
+  const localDraftTimeoutRef = useRef<number | null>(null);
+  const lastUnloadFlushAtRef = useRef(0);
   const riskScoreRef = useRef(0);
   const currentQuestionRef = useRef<QuestionItem | null>(
     displayQuestions[0] ?? null
@@ -910,11 +956,12 @@ export default function ExamTaker({
   const shouldRunContinuousCamera = requireCamera && (!isMobileStandard || spotCheckOpen);
   const heartbeatIntervalMs =
     exam.proctoring_mode === "strict"
-      ? 12000
+      ? 20000
       : exam.proctoring_mode === "standard"
-        ? 20000
+        ? 30000
         : null;
   const sebDetected = isSEBBrowser();
+  const textCheckpointDelayMs = isMobileSession ? 8000 : 12000;
 
   const { cameraStatus, videoRef } = useCameraMonitor({
     sessionId,
@@ -1256,6 +1303,7 @@ export default function ExamTaker({
 
   const checkpointDirtyAnswers = useCallback(async () => {
     if (isCheckpointingRef.current || isSubmittingRef.current) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
     const currentAnswers = answersRef.current;
     const lastCheckpoint = lastCheckpointRef.current;
@@ -1276,12 +1324,95 @@ export default function ExamTaker({
     }
   }, [sessionId]);
 
+  const flushLocalDraftWrite = useCallback(
+    (nextAnswers?: Record<string, string>) => {
+      if (typeof window === "undefined") return;
+      const answersToPersist = nextAnswers ?? answersRef.current;
+      if (localDraftTimeoutRef.current !== null) {
+        window.clearTimeout(localDraftTimeoutRef.current);
+        localDraftTimeoutRef.current = null;
+      }
+      if (Object.keys(answersToPersist).length === 0) {
+        window.localStorage.removeItem(draftStorageKey);
+        return;
+      }
+      window.localStorage.setItem(draftStorageKey, JSON.stringify(answersToPersist));
+    },
+    [draftStorageKey],
+  );
+
+  const scheduleLocalDraftWrite = useCallback(
+    (nextAnswers: Record<string, string>, delayMs: number) => {
+      if (typeof window === "undefined") return;
+      if (localDraftTimeoutRef.current !== null) {
+        window.clearTimeout(localDraftTimeoutRef.current);
+      }
+      localDraftTimeoutRef.current = window.setTimeout(() => {
+        flushLocalDraftWrite(nextAnswers);
+      }, delayMs);
+    },
+    [flushLocalDraftWrite],
+  );
+
+  const scheduleCheckpoint = useCallback((delayMs: number) => {
+    if (typeof window === "undefined") return;
+    if (document.hidden) return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    if (isSubmittingRef.current) return;
+
+    if (checkpointTimeoutRef.current !== null) {
+      window.clearTimeout(checkpointTimeoutRef.current);
+    }
+
+    checkpointTimeoutRef.current = window.setTimeout(() => {
+      checkpointTimeoutRef.current = null;
+      void checkpointDirtyAnswers();
+    }, delayMs);
+  }, [checkpointDirtyAnswers]);
+
+  const flushRuntimeKeepalive = useCallback(
+    (reason: string) => {
+      if (!runtimeToken) return false;
+
+      const { answers: dirtyAnswers, answerAnalytics: dirtyAnalytics } =
+        buildDirtyAnswerDelta(
+          answersRef.current,
+          lastCheckpointRef.current,
+          answerAnalyticsRef.current,
+        );
+
+      if (Object.keys(dirtyAnswers).length === 0) {
+        return false;
+      }
+
+      const now = Date.now();
+      if (now - lastUnloadFlushAtRef.current < 1000) {
+        return false;
+      }
+      lastUnloadFlushAtRef.current = now;
+
+      return sendExamRuntimeFlush({
+        sessionId,
+        runtimeToken,
+        answers: dirtyAnswers,
+        answerAnalytics: dirtyAnalytics,
+        reason,
+      });
+    },
+    [runtimeToken, sessionId],
+  );
+
   // Шалгалт дуусгах
   const handleSubmit = useCallback(async () => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setSubmitError(null);
+    flushLocalDraftWrite();
+    if (checkpointTimeoutRef.current !== null) {
+      window.clearTimeout(checkpointTimeoutRef.current);
+      checkpointTimeoutRef.current = null;
+    }
 
     // Submit payload нь in-flight autosave-с үл хамааран одоогийн client state-г authoritative болгоно.
     const pendingDelta = buildDirtyAnswerDelta(
@@ -1325,6 +1456,7 @@ export default function ExamTaker({
   }, [
     draftStorageKey,
     exam.id,
+    flushLocalDraftWrite,
     indexStorageKey,
     router,
     sessionId,
@@ -1368,44 +1500,51 @@ export default function ExamTaker({
     }
   }, [timeLeft, initialTimeLeftSeconds]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(answers));
-  }, [answers, draftStorageKey]);
-
   // Persist current question index so it survives a page reload.
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(indexStorageKey, String(currentIndex));
   }, [currentIndex, indexStorageKey]);
 
-  // Batched checkpoint: flush dirty answers every 5 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      void checkpointDirtyAnswers();
-    }, isMobileSession ? 3000 : 5000);
-    return () => clearInterval(interval);
-  }, [checkpointDirtyAnswers, isMobileSession]);
-
   // Checkpoint on question navigation
   useEffect(() => {
+    flushLocalDraftWrite();
     void checkpointDirtyAnswers();
-  }, [currentIndex, checkpointDirtyAnswers]);
+  }, [currentIndex, checkpointDirtyAnswers, flushLocalDraftWrite]);
+
+  useEffect(() => {
+    return () => {
+      if (checkpointTimeoutRef.current !== null) {
+        window.clearTimeout(checkpointTimeoutRef.current);
+      }
+      if (localDraftTimeoutRef.current !== null) {
+        window.clearTimeout(localDraftTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Checkpoint on page hide / beforeunload
   useEffect(() => {
     const handlePageHide = (event?: Event) => {
-      void checkpointDirtyAnswers();
-      emitProctorEvent(
-        "page_frozen",
-        {
-          persisted:
-            event && "persisted" in event
-              ? Boolean((event as PageTransitionEvent).persisted)
-              : false,
-        },
-        2000
-      );
+      const reason = event?.type === "beforeunload" ? "beforeunload" : "pagehide";
+      if (checkpointTimeoutRef.current !== null) {
+        window.clearTimeout(checkpointTimeoutRef.current);
+        checkpointTimeoutRef.current = null;
+      }
+      flushLocalDraftWrite();
+      flushRuntimeKeepalive(reason);
+      if (reason === "pagehide") {
+        emitProctorEvent(
+          "page_frozen",
+          {
+            persisted:
+              event && "persisted" in event
+                ? Boolean((event as PageTransitionEvent).persisted)
+                : false,
+          },
+          2000
+        );
+      }
     };
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("beforeunload", handlePageHide);
@@ -1413,7 +1552,7 @@ export default function ExamTaker({
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("beforeunload", handlePageHide);
     };
-  }, [checkpointDirtyAnswers, emitProctorEvent]);
+  }, [emitProctorEvent, flushLocalDraftWrite, flushRuntimeKeepalive]);
 
   // Proctoring: visibility / focus / fullscreen / device change
   useEffect(() => {
@@ -1431,6 +1570,7 @@ export default function ExamTaker({
           },
           500
         );
+        flushLocalDraftWrite();
         void checkpointDirtyAnswers();
 
         if (!isMobileSession && newCount >= 3) {
@@ -1438,6 +1578,21 @@ export default function ExamTaker({
             `Анхааруулга: Та ${newCount} удаа цонхноос гарлаа. Integrity challenge идэвхжиж болно.`
           );
         }
+        return;
+      }
+
+      if (isSubmittingRef.current) return;
+      void checkpointDirtyAnswers();
+      if (heartbeatIntervalMs) {
+        void recordExamHeartbeat(sessionId, runtimeToken).then((result) => {
+          if (result && "error" in result) {
+            emitProctorEvent(
+              "heartbeat_lost",
+              { reason: result.error ?? "heartbeat_failed" },
+              5000,
+            );
+          }
+        });
       }
     };
 
@@ -1493,8 +1648,12 @@ export default function ExamTaker({
   }, [
     checkpointDirtyAnswers,
     emitProctorEvent,
+    flushLocalDraftWrite,
+    heartbeatIntervalMs,
     isMobileSession,
     requireCamera,
+    runtimeToken,
+    sessionId,
     shouldEnforceFullscreen,
   ]);
 
@@ -1523,6 +1682,17 @@ export default function ExamTaker({
         2000
       );
       void checkpointDirtyAnswers();
+      if (heartbeatIntervalMs) {
+        void recordExamHeartbeat(sessionId, runtimeToken).then((result) => {
+          if (result && "error" in result) {
+            emitProctorEvent(
+              "heartbeat_lost",
+              { reason: result.error ?? "heartbeat_failed" },
+              5000,
+            );
+          }
+        });
+      }
     };
 
     window.addEventListener("offline", handleOffline);
@@ -1531,7 +1701,7 @@ export default function ExamTaker({
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener("online", handleOnline);
     };
-  }, [checkpointDirtyAnswers, emitProctorEvent]);
+  }, [checkpointDirtyAnswers, emitProctorEvent, heartbeatIntervalMs, runtimeToken, sessionId]);
 
   useEffect(() => {
     if (!isMobileSession) return;
@@ -1704,6 +1874,9 @@ export default function ExamTaker({
     if (!heartbeatIntervalMs) return;
 
     const interval = window.setInterval(() => {
+      if (document.hidden || !navigator.onLine || isSubmittingRef.current) {
+        return;
+      }
       void recordExamHeartbeat(sessionId, runtimeToken).then((result) => {
         if (result && "error" in result) {
           emitProctorEvent("heartbeat_lost", { reason: result.error ?? "heartbeat_failed" }, 5000);
@@ -1791,19 +1964,24 @@ export default function ExamTaker({
         nextAnswers[questionId] = normalizedAnswer;
       }
 
-      answerAnalyticsRef.current = {
-        ...answerAnalyticsRef.current,
-        [questionId]: {
-          firstAnsweredAt: previous.firstAnsweredAt ?? nowIso,
-          lastChangedAt: nowIso,
-          changeCount: previous.changeCount + 1,
-        },
+      answerAnalyticsRef.current[questionId] = {
+        firstAnsweredAt: previous.firstAnsweredAt ?? nowIso,
+        lastChangedAt: nowIso,
+        changeCount: previous.changeCount + 1,
       };
 
       answersRef.current = nextAnswers;
       setAnswers(nextAnswers);
+      if (isHighChurnQuestionType(questionType)) {
+        scheduleLocalDraftWrite(nextAnswers, FREE_TEXT_DRAFT_DEBOUNCE_MS);
+        scheduleCheckpoint(textCheckpointDelayMs);
+        return;
+      }
+
+      scheduleLocalDraftWrite(nextAnswers, STRUCTURED_DRAFT_DEBOUNCE_MS);
+      scheduleCheckpoint(STRUCTURED_CHECKPOINT_DEBOUNCE_MS);
     },
-    []
+    [scheduleCheckpoint, scheduleLocalDraftWrite, textCheckpointDelayMs]
   );
 
   const answeredCount = displayQuestions.filter((question) =>

@@ -52,7 +52,10 @@ export default async function StudentResultsPage() {
     <div className="flex flex-col gap-6.5">
       <RouteAutoRefresh
         active={hasVisiblePendingResult}
+        intervalsMs={[6000, 10000, 10000, 15000, 15000, 30000]}
         label="StudentResultsPage"
+        pauseWhenHidden
+        runImmediately={false}
       />
       <div className="flex items-center gap-6.5">
         <h2 className="text-2xl font-medium tracking-tight">

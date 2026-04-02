@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "clean:next": "rm -rf .next",
+    "subjects:ensure": "node scripts/admin/ensure-default-subjects.mjs",
     "stress:setup": "node scripts/stress/setup-dataset.mjs",
     "stress:sessions": "node scripts/stress/create-session-cache.mjs",
     "stress:cleanup": "node scripts/stress/cleanup-dataset.mjs",
