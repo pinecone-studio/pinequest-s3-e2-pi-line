@@ -14,6 +14,21 @@ import { login } from "@/lib/auth/actions";
 
 type LoginRole = "admin" | "teacher" | "student";
 
+const DEMO_CREDENTIALS: Record<LoginRole, { email: string; password: string }> = {
+  admin: {
+    email: "admin@pineexam.test",
+    password: "PineExam123!",
+  },
+  teacher: {
+    email: "teacher10@pineexam.test",
+    password: "PineExam123!",
+  },
+  student: {
+    email: "student50@pineexam.test",
+    password: "PineExam123!",
+  },
+};
+
 const ROLE_META: Record<
   LoginRole,
   {
@@ -227,7 +242,15 @@ function RoleLoginCard({
     [meta.iconPath, meta.iconTint]
   );
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const currentYear = new Date().getFullYear();
+
+  function fillDemoCredentials(targetRole: LoginRole) {
+    const demoUser = DEMO_CREDENTIALS[targetRole];
+    setEmail(demoUser.email);
+    setPassword(demoUser.password);
+  }
 
   return (
     <div className="w-full max-w-[315px] text-center">
@@ -262,6 +285,21 @@ function RoleLoginCard({
           </div>
         ) : null}
 
+        <div className="mt-5 space-y-[8px] text-left">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#7d7d7d]">
+            Demo Users
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={() => fillDemoCredentials(role)}
+              className="h-[30px] rounded-[8px] border border-[#d2d2d2] bg-[#fafafa] text-[11px] font-semibold text-[#4a4a4a] transition-colors hover:bg-[#f0f0f0]"
+            >
+              {ROLE_META[role].cardTitle.replace("\n", " ")}
+            </button>
+          </div>
+        </div>
+
         <form action={onSubmit} className="mt-[36px] space-y-[16px] text-left">
           <div className="space-y-[7px]">
             <label
@@ -274,6 +312,8 @@ function RoleLoginCard({
               id="email"
               name="email"
               type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
               required
               placeholder={meta.emailPlaceholder}
               className="h-[36px] w-full rounded-[10px] border border-[#d9d9d9] bg-[#f8f8f8] px-[13px] text-[13px] text-[#333333] shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] outline-none placeholder:text-[#a4a4a4] focus:border-[#98b8ef]"
@@ -292,6 +332,8 @@ function RoleLoginCard({
                 id="password"
                 name="password"
                 type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
                 required
                 placeholder="******"
                 className="h-[36px] w-full rounded-[10px] border border-[#d9d9d9] bg-[#f8f8f8] px-[13px] pr-11 text-[13px] text-[#333333] shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] outline-none placeholder:text-[#a4a4a4] focus:border-[#98b8ef]"
