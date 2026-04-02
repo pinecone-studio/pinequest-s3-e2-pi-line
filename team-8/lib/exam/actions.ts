@@ -843,6 +843,12 @@ export async function publishExam(examId: string) {
 
     revalidatePath("/educator");
     revalidatePath(`/educator/exams/${examId}`);
+    revalidatePath("/student");
+    revalidatePath("/student/exams");
+    revalidatePath("/student/schedule");
+    revalidatePath("/student/results");
+    revalidatePath(`/student/exams/${examId}/take`);
+    revalidatePath(`/student/exams/${examId}/result`);
     return { success: true, warning: "Snapshot migration apply хийгдээгүй тул publish fallback mode-оор үргэлжиллээ." };
   }
 
@@ -878,6 +884,12 @@ export async function publishExam(examId: string) {
 
   revalidatePath("/educator");
   revalidatePath(`/educator/exams/${examId}`);
+  revalidatePath("/student");
+  revalidatePath("/student/exams");
+  revalidatePath("/student/schedule");
+  revalidatePath("/student/results");
+  revalidatePath(`/student/exams/${examId}/take`);
+  revalidatePath(`/student/exams/${examId}/result`);
   return { success: true };
 }
 

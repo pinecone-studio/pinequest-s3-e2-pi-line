@@ -350,8 +350,7 @@ export async function getStudentStats() {
       (left, right) =>
         new Date(left.start_time).getTime() -
         new Date(right.start_time).getTime()
-    )
-    .slice(0, 5);
+    );
 
   const recentResults = bestSessionsByExam
     .slice()

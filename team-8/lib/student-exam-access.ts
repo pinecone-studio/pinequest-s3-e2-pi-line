@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import {
   deriveResultVisibility,
@@ -18,6 +19,10 @@ import {
 
 type SupabaseExamAccessClient = Pick<
   Awaited<ReturnType<typeof createClient>>,
+  "from"
+>;
+type SupabaseExamAccessBackfillClient = Pick<
+  ReturnType<typeof createAdminClient>,
   "from"
 >;
 
@@ -128,6 +133,90 @@ function normalizeExamIds(options?: {
   );
 
   return examIds.length > 0 ? examIds : null;
+}
+
+function getExamAccessBackfillClient() {
+  try {
+    return createAdminClient() as SupabaseExamAccessBackfillClient;
+  } catch {
+    return null;
+  }
+}
+
+async function backfillPublishedExamRecipientsForStudent(
+  admin: SupabaseExamAccessBackfillClient,
+  userId: string,
+  examIds: string[] | null,
+) {
+  const { data: memberships, error: membershipsError } = await admin
+    .from("student_group_members")
+    .select("group_id")
+    .eq("student_id", userId);
+
+  if (membershipsError || !memberships || memberships.length === 0) {
+    return;
+  }
+
+  const groupIds = Array.from(
+    new Set(memberships.map((membership) => String(membership.group_id))),
+  );
+
+  let assignmentQuery = admin
+    .from("exam_assignments")
+    .select("exam_id, assigned_by, exams!inner(id, is_published)")
+    .in("group_id", groupIds)
+    .eq("exams.is_published", true);
+
+  if (examIds && examIds.length === 1) {
+    assignmentQuery = assignmentQuery.eq("exam_id", examIds[0]);
+  } else if (examIds && examIds.length > 1) {
+    assignmentQuery = assignmentQuery.in("exam_id", examIds);
+  }
+
+  const { data: assignments, error: assignmentsError } = await assignmentQuery;
+
+  if (assignmentsError || !assignments || assignments.length === 0) {
+    return;
+  }
+
+  const recipientRowsByExam = new Map<
+    string,
+    { exam_id: string; student_id: string; assigned_by: string | null }
+  >();
+
+  for (const assignment of assignments) {
+    const examId = String(assignment.exam_id);
+    const assignedBy =
+      typeof assignment.assigned_by === "string" ? assignment.assigned_by : null;
+    const existing = recipientRowsByExam.get(examId);
+
+    if (!existing || (!existing.assigned_by && assignedBy)) {
+      recipientRowsByExam.set(examId, {
+        exam_id: examId,
+        student_id: userId,
+        assigned_by: assignedBy,
+      });
+    }
+  }
+
+  if (recipientRowsByExam.size === 0) {
+    return;
+  }
+
+  const { error: upsertError } = await admin
+    .from("exam_recipients")
+    .upsert(Array.from(recipientRowsByExam.values()), {
+      onConflict: "exam_id,student_id",
+      ignoreDuplicates: true,
+    });
+
+  if (upsertError) {
+    console.error("Failed to backfill exam recipients for student access", {
+      userId,
+      examIds,
+      error: upsertError,
+    });
+  }
 }
 
 export function normalizeProctoringSettings(
@@ -270,6 +359,15 @@ export async function getAssignedPublishedExamRows(
   const examIds = normalizeExamIds(options);
   if (Array.isArray(examIds) && examIds.length === 0) {
     return [];
+  }
+
+  const backfillClient = getExamAccessBackfillClient();
+  if (backfillClient) {
+    await backfillPublishedExamRecipientsForStudent(
+      backfillClient,
+      userId,
+      examIds,
+    );
   }
 
   const buildRecipientQuery = (selectClause: string) => {
