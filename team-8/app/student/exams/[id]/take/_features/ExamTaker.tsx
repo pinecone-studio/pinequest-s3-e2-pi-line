@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Calculator, Eraser, Maximize2, SquarePen, Trash2, X } from "lucide-react";
+import {
+  Calculator,
+  CheckCircle2,
+  Eraser,
+  Maximize2,
+  SquarePen,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import MathContent from "@/components/math/MathContent";
-import MathReferencePanel from "@/components/math/MathReferencePanel";
 import {
   logProctorEvent,
   recordExamHeartbeat,
@@ -262,14 +269,6 @@ function getRiskLabel(level: ReturnType<typeof deriveRiskLevel>) {
     default:
       return "Эрсдэл бага";
   }
-}
-
-function hasMathSignal(value: string | null | undefined) {
-  if (!value) return false;
-
-  return /(\$\$?|\\\(|\\\[|\\frac|\\sqrt|\\pi|\\sin|\\cos|\\tan|\\log|\\int|\\sum|\\prod|\^|_|√|π|≤|≥|≠|∠|△|матем|геометр|алгебр|тригонометр)/iu.test(
-    value
-  );
 }
 
 function ToolTile({
@@ -835,8 +834,8 @@ export default function ExamTaker({
   // Wall-clock deadline — used to compensate for timer throttling on backgrounded mobile tabs.
   const timerEndEpochRef = useRef<number>(Date.now() + initialTimeLeftSeconds * 1000);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSucceeded, setSubmitSucceeded] = useState(false);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const lastCheckpointRef = useRef<Record<string, string>>(savedAnswers);
   const isCheckpointingRef = useRef(false);
   const riskScoreRef = useRef(0);
@@ -959,24 +958,6 @@ export default function ExamTaker({
   });
 
   const currentQuestion = displayQuestions[currentIndex] ?? null;
-  const showMathReference = useMemo(() => {
-    const examText = `${String(exam.title ?? "")} ${String(exam.description ?? "")}`;
-    if (hasMathSignal(examText)) return true;
-
-    return displayQuestions.some((question) => {
-      if (
-        hasMathSignal(question.content) ||
-        hasMathSignal(question.content_html) ||
-        hasMathSignal(question.question_passages?.content) ||
-        hasMathSignal(question.question_passages?.content_html)
-      ) {
-        return true;
-      }
-
-      return (question.options ?? []).some((option) => hasMathSignal(String(option)));
-    });
-  }, [displayQuestions, exam.description, exam.title]);
-
   useEffect(() => {
     currentQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
@@ -1311,7 +1292,7 @@ export default function ExamTaker({
         window.localStorage.removeItem(draftStorageKey);
         window.localStorage.removeItem(indexStorageKey);
       }
-      router.replace(`/student/exams/${exam.id as string}/result`);
+      setSubmitSucceeded(true);
     } else {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
@@ -1319,12 +1300,20 @@ export default function ExamTaker({
     }
   }, [
     draftStorageKey,
-    exam.id,
     flushPendingAnswers,
     indexStorageKey,
-    router,
     sessionId,
   ]);
+
+  useEffect(() => {
+    if (!submitSucceeded) return;
+
+    const redirectTimer = window.setTimeout(() => {
+      router.replace("/student/results");
+    }, 2000);
+
+    return () => window.clearTimeout(redirectTimer);
+  }, [router, submitSucceeded]);
 
   useEffect(() => {
     handleSubmitRef.current = () => {
@@ -1859,6 +1848,30 @@ export default function ExamTaker({
     );
   }
 
+  if (submitSucceeded) {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center px-4"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(249,240,252,0.98) 0%, rgba(255,255,255,0.98) 100%)",
+        }}
+      >
+        <div className="flex h-[267px] w-full max-w-[446px] flex-col items-center justify-center gap-[14px] rounded-[8px] border border-[#DEE2E6] bg-white px-10 py-9 text-center shadow-[0_0_30px_rgba(127,50,245,0.2),0_20px_20px_rgba(0,0,0,0.08)]">
+          <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full bg-[#F8E8F4]">
+            <CheckCircle2 className="h-8 w-8 text-[#C85BAA]" strokeWidth={2.2} />
+          </div>
+          <h1 className="text-[20px] font-semibold leading-[120%] text-black">
+            Та шалгалтаа амжилттай илгээлээ.
+          </h1>
+          <p className="text-[14px] font-normal leading-[120%] text-[#6B6B6B]">
+            Таны шалгалтын хариу удахгүй гарна
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const currentPassage = currentQuestion.question_passages;
   const currentMultipleAnswers = parseStoredArray(answers[currentQuestion.id]);
   const currentMatchingPrompts =
@@ -1886,39 +1899,7 @@ export default function ExamTaker({
       className="min-h-screen pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-8"
       style={{ background: "linear-gradient(180deg, rgba(249,240,252,0.98) 0%, rgba(255,255,255,0.98) 100%)" }}
     >
-      {/* ── Modals (unchanged) ── */}
-      {showSubmitConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4">
-          <div className="w-full max-w-md rounded-3xl border bg-background p-6 shadow-xl">
-            <h3 className="text-lg font-semibold">Шалгалт дуусгах уу?</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {answeredCount}/{displayQuestions.length} асуултад хариулсан байна.
-              {answeredCount < displayQuestions.length && (
-                <span className="font-medium text-destructive">
-                  {" "}
-                  {displayQuestions.length - answeredCount} асуулт хариулаагүй байна.
-                </span>
-              )}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Дуусгасны дараа засах боломжгүй.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowSubmitConfirm(false)}>
-                Буцах
-              </Button>
-              <Button
-                variant="destructive"
-                className="flex-1"
-                onClick={() => { setShowSubmitConfirm(false); void handleSubmit(); }}
-              >
-                Дуусгах
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* ── Modals ── */}
       {challengeOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-lg rounded-3xl border bg-background p-6 shadow-2xl">
@@ -2319,7 +2300,7 @@ export default function ExamTaker({
                 </Button>
               ) : (
                 <Button
-                  onClick={() => setShowSubmitConfirm(true)}
+                  onClick={() => void handleSubmit()}
                   loading={isSubmitting}
                   loadingText="Илгээж байна..."
                   className="h-11 w-[140px] rounded-full bg-[#7F32F5] text-[16px] font-normal leading-[120%] text-white hover:bg-[#712adf]"
@@ -2377,7 +2358,7 @@ export default function ExamTaker({
               Дараах
             </Button>
           ) : (
-            <Button type="button" variant="destructive" onClick={() => setShowSubmitConfirm(true)} className="flex-1">
+            <Button type="button" variant="destructive" onClick={() => void handleSubmit()} className="flex-1">
               Дуусгах
             </Button>
           )}
