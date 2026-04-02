@@ -3,47 +3,22 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type CSSProperties, type SVGProps } from "react";
+import { useState, type ComponentType, type SVGProps } from "react";
 import { logout } from "@/lib/auth/actions";
-import { ChevronLeft, LogOut } from "lucide-react";
+import {
+  BookOpen,
+  ChevronLeft,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+} from "lucide-react";
 import Logo from "@/app/_icons/Logo";
-import SideBarImage from "@/app/_icons/SideBarImage";
 
 interface NavItem {
   href: string;
   label: string;
-  iconPath: string;
+  icon: ComponentType<{ className?: string }>;
   iconClassName: string;
-}
-
-function getIconMaskStyle(iconPath: string): CSSProperties {
-  return {
-    WebkitMaskImage: `url(${iconPath})`,
-    maskImage: `url(${iconPath})`,
-    WebkitMaskRepeat: "no-repeat",
-    maskRepeat: "no-repeat",
-    WebkitMaskPosition: "center",
-    maskPosition: "center",
-    WebkitMaskSize: "contain",
-    maskSize: "contain",
-    backgroundColor: "currentColor",
-  };
-}
-
-function SidebarItemIcon({
-  iconPath,
-  className,
-}: {
-  iconPath: string;
-  className: string;
-}) {
-  return (
-    <span
-      aria-hidden="true"
-      className={className}
-      style={getIconMaskStyle(iconPath)}
-    />
-  );
 }
 
 function CloseNavIcon(props: SVGProps<SVGSVGElement>) {
@@ -63,20 +38,20 @@ const navItems: NavItem[] = [
   {
     href: "/admin",
     label: "Хянах самбар",
-    iconPath: "/educator-icons/home.png",
+    icon: LayoutDashboard,
     iconClassName: "h-5 w-5",
   },
   {
     href: "/admin/teachers",
     label: "Хичээл оноолт",
-    iconPath: "/educator-icons/import_contacts.png",
+    icon: FileText,
     iconClassName: "h-5 w-5",
   },
   {
     href: "/admin/users",
     label: "Хэрэглэгчид",
-    iconPath: "/educator-icons/exams.png",
-    iconClassName: "h-5 w-4",
+    icon: BookOpen,
+    iconClassName: "h-5 w-5",
   },
 ];
 
@@ -119,6 +94,7 @@ export default function AdminSidebar() {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/admin" && pathname.startsWith(item.href));
+              const Icon = item.icon;
 
               return (
                 <Link
@@ -131,8 +107,7 @@ export default function AdminSidebar() {
                       : "text-[#757575] hover:bg-[#F7F9FC] hover:text-[#3B763B]"
                   } ${isCollapsed ? "justify-center gap-0 px-3" : "gap-[14px]"}`}
                 >
-                  <SidebarItemIcon
-                    iconPath={item.iconPath}
+                  <Icon
                     className={`${item.iconClassName} shrink-0 ${
                       isActive
                         ? "text-white"

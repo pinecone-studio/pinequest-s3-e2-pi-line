@@ -41,9 +41,11 @@ export default function TeacherAssignmentPanel({
   const [newSubjectId, setNewSubjectId] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const assignedSubjectIds = new Set(teacher.subjects.map((subject) => subject.id));
+  const assignedSubjectIds = new Set(
+    teacher.subjects.map((subject) => subject.id),
+  );
   const availableSubjects = allSubjects.filter(
-    (subject) => !assignedSubjectIds.has(subject.id)
+    (subject) => !assignedSubjectIds.has(subject.id),
   );
   const subjectGrades = useMemo(() => {
     const nextMap = new Map<string, string[]>();
@@ -57,7 +59,10 @@ export default function TeacherAssignmentPanel({
 
       if (!current.includes(label)) {
         current.push(label);
-        current.sort((left, right) => Number.parseInt(left, 10) - Number.parseInt(right, 10));
+        current.sort(
+          (left, right) =>
+            Number.parseInt(left, 10) - Number.parseInt(right, 10),
+        );
       }
 
       nextMap.set(assignment.subject_id, current);
@@ -92,9 +97,9 @@ export default function TeacherAssignmentPanel({
   }
 
   return (
-    <Card className="rounded-[26px] border-zinc-200 py-0 shadow-none">
-      <CardContent className="space-y-4 px-5 py-5">
-        <div className="flex flex-col gap-3 border-b border-zinc-100 pb-4 md:flex-row md:items-start md:justify-between">
+    <div className="rounded-[26px]  py-0 shadow-none">
+      <div className="flex flex-col gap-0.5 ">
+        <div className="flex flex-col gap-0.5 md:flex-row md:items-start md:justify-between">
           <div className="flex items-start gap-3">
             <Avatar size="lg" className="mt-0.5 bg-[#eef4ff] text-[#3156a6]">
               <AvatarFallback className="bg-[#eef4ff] font-medium text-[#3156a6]">
@@ -102,41 +107,15 @@ export default function TeacherAssignmentPanel({
               </AvatarFallback>
             </Avatar>
 
-            <div className="space-y-2">
-              <h4 className="text-lg font-semibold text-zinc-950">
+            <div className="">
+              <h4 className="text-[14px] text-zinc-950">
                 {teacher.full_name || "(Нэргүй багш)"}
               </h4>
-              <p className="text-sm text-zinc-500">{teacher.email}</p>
+              <p className="text-[12px] font-medium text-zinc-500">
+                {teacher.email}
+              </p>
 
               <div className="flex flex-wrap gap-2">
-                <Badge
-                  variant="outline"
-                  className="rounded-full bg-[#f8fbff] text-[#3156a6]"
-                >
-                  {teacher.subjects.length} хичээл
-                </Badge>
-                {teacher.subjects.slice(0, 2).map((subject) => {
-                  const gradeLabels = subjectGrades.get(subject.id) ?? [];
-
-                  return (
-                    <div key={subject.id} className="flex flex-wrap gap-2">
-                      <Badge
-                        variant="secondary"
-                        className="rounded-full bg-zinc-100 text-zinc-600"
-                      >
-                        {subject.name}
-                      </Badge>
-                      {gradeLabels.length > 0 ? (
-                        <Badge
-                          variant="outline"
-                          className="rounded-full bg-white text-zinc-500"
-                        >
-                          {gradeLabels.join(", ")}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  );
-                })}
                 {teacher.subjects.length > 2 ? (
                   <Badge
                     variant="secondary"
@@ -149,20 +128,18 @@ export default function TeacherAssignmentPanel({
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="rounded-2xl"
+          <div
+            className=" text-[#4078C1] font-semibold text-[16px] flex gap-2 items-center"
             onClick={() => setIsExpanded((current) => !current)}
           >
             Дэлгэрэнгүй
             <ChevronDown
               className={cn(
                 "ml-2 h-4 w-4 transition-transform",
-                isExpanded && "rotate-180"
+                isExpanded && "rotate-180",
               )}
             />
-          </Button>
+          </div>
         </div>
 
         {error ? (
@@ -174,7 +151,9 @@ export default function TeacherAssignmentPanel({
         {isExpanded ? (
           <div className="space-y-4">
             <div className="space-y-2">
-              <p className="text-sm font-medium text-zinc-700">Оноосон хичээлүүд</p>
+              <p className="text-sm font-medium text-zinc-700">
+                Оноосон хичээлүүд
+              </p>
 
               {teacher.subjects.length > 0 ? (
                 <div className="space-y-2">
@@ -187,7 +166,9 @@ export default function TeacherAssignmentPanel({
                         className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-100 bg-zinc-50/70 px-3 py-3"
                       >
                         <div>
-                          <p className="font-medium text-zinc-900">{subject.name}</p>
+                          <p className="font-medium text-zinc-900">
+                            {subject.name}
+                          </p>
                           <p className="text-xs text-zinc-500">
                             {gradeLabels.length > 0
                               ? gradeLabels.join(", ")
@@ -218,7 +199,9 @@ export default function TeacherAssignmentPanel({
             </div>
 
             <div className="rounded-[24px] border border-dashed border-[#cfe0ff] bg-[#f8fbff] px-4 py-4">
-              <p className="text-sm font-medium text-[#1d3d8f]">Шинэ хичээл нэмэх</p>
+              <p className="text-sm font-medium text-[#1d3d8f]">
+                Шинэ хичээл нэмэх
+              </p>
               <p className="mt-1 text-sm text-zinc-500">
                 Доорх жагсаалтаас сонгоод тухайн багшид шууд онооно.
               </p>
@@ -256,7 +239,7 @@ export default function TeacherAssignmentPanel({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
