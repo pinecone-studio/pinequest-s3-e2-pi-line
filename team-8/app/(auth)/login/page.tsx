@@ -24,7 +24,7 @@ const DEMO_CREDENTIALS: Record<LoginRole, { email: string; password: string }> =
     password: "PineExam123!",
   },
   student: {
-    email: "student50@pineexam.test",
+    email: "studen42@pineexam.test",
     password: "PineExam123!",
   },
 };
