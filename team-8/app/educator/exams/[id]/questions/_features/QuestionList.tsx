@@ -25,6 +25,7 @@ interface Props {
   passages: QuestionPassage[];
   isLocked?: boolean;
   className?: string;
+  showSummary?: boolean;
 }
 
 export default function QuestionList({
@@ -33,11 +34,27 @@ export default function QuestionList({
   passages,
   isLocked = false,
   className,
+  showSummary = true,
 }: Props) {
   const renderedPassages = new Set<string>();
 
   async function handleDelete(questionId: string) {
     await deleteQuestion(questionId, examId);
+  }
+
+  function formatCorrectAnswer(value: string | null, type: string) {
+    if (!value) return null;
+
+    if (type === "multiple_response") {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed.join(", ");
+        }
+      } catch {}
+    }
+
+    return value;
   }
 
   if (questions.length === 0) {
@@ -63,12 +80,14 @@ export default function QuestionList({
       )}
     >
       <div className="space-y-3">
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>{questions.length} асуулт</span>
-          <span>Нийт оноо: {totalPoints}</span>
-        </div>
+        {showSummary ? (
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>{questions.length} асуулт</span>
+            <span>Нийт оноо: {totalPoints}</span>
+          </div>
+        ) : null}
 
-        {questions.map((q, idx) => {
+        {questions.map((q) => {
           const passage = q.question_passages;
           const shouldRenderPassage =
             Boolean(passage?.id) && !renderedPassages.has(String(passage?.id));
@@ -76,6 +95,8 @@ export default function QuestionList({
           if (passage?.id) {
             renderedPassages.add(passage.id);
           }
+
+          const correctAnswerText = formatCorrectAnswer(q.correct_answer, q.type);
 
           return (
             <Fragment key={q.id}>
@@ -106,31 +127,34 @@ export default function QuestionList({
               )}
 
               <Card
-                className={
-                  q.ai_variant_enabled
-                    ? "border-amber-200 bg-amber-50/30"
-                    : undefined
-                }
+                className={cn(
+                  "rounded-[28px] border border-[#E2E8F0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.12)]",
+                  q.ai_variant_enabled ? "border-amber-200 bg-amber-50/30" : undefined
+                )}
               >
-                <CardContent className="grid grid-cols-[auto_minmax(0,1fr)_108px] items-start gap-4 pt-4">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
-                    {idx + 1}
-                  </span>
-                  <div className="min-w-0 space-y-1">
+                <CardContent className="grid grid-cols-[minmax(0,1fr)_108px] items-center gap-4 px-6 py-5">
+                  <div className="min-w-0 space-y-3">
                     <MathContent
                       html={q.content_html}
                       text={q.content}
-                      className="prose prose-sm max-w-none break-words text-foreground"
+                      className="prose prose-sm max-w-none break-words text-[18px] font-semibold text-foreground"
                     />
-                    <div className="flex min-w-0 flex-wrap gap-2">
-                      <Badge variant="outline">{typeLabels[q.type] ?? q.type}</Badge>
-                      <Badge variant="outline">{q.points} оноо</Badge>
-                      {q.ai_variant_enabled ? (
-                        <Badge className="border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-100">
-                          AI хувилбар
-                        </Badge>
-                      ) : null}
-                    </div>
+                    {correctAnswerText ? (
+                      <p className="text-[14px] font-medium text-[#1E90FF]">
+                        Зөв хариулт: {correctAnswerText}
+                      </p>
+                    ) : null}
+                    {showSummary ? (
+                      <div className="flex min-w-0 flex-wrap gap-2">
+                        <Badge variant="outline">{typeLabels[q.type] ?? q.type}</Badge>
+                        <Badge variant="outline">{q.points} оноо</Badge>
+                        {q.ai_variant_enabled ? (
+                          <Badge className="border-amber-200 bg-amber-100 text-amber-950 hover:bg-amber-100">
+                            AI хувилбар
+                          </Badge>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   {!isLocked && (
                     <div className="flex min-w-[108px] shrink-0 items-center justify-end gap-2 self-start">
@@ -142,7 +166,7 @@ export default function QuestionList({
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        className="shrink-0 text-[#EF4444] hover:text-[#DC2626]"
                         onClick={() => handleDelete(q.id)}
                       >
                         <Trash2 className="h-4 w-4" />

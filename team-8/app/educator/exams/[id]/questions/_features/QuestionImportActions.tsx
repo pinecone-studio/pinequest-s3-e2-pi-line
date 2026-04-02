@@ -620,24 +620,16 @@ export default function QuestionImportActions({
 
   return (
     <>
-      <div className="space-y-3 rounded-[24px] border border-dashed border-zinc-200 bg-zinc-50/80 p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-zinc-950">
-              Хурдан үйлдлүүд
-            </p>
-          </div>
-
-          <div className="flex w-full flex-col gap-2 sm:ml-auto sm:w-auto sm:flex-row sm:justify-end">
+      <div className="space-y-3">
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:justify-end">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full justify-between rounded-full px-5 sm:w-[190px]"
+                  className="h-10 w-full justify-between rounded-[10px] border-[#E5E7EB] bg-white px-4 text-[12px] font-medium text-[#374151] shadow-none sm:w-[160px]"
                   disabled={isParsing || isImporting}
                 >
-                  <PlusCircle className="mr-2 h-4 w-4" />
                   Асуулт нэмэх
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
@@ -693,10 +685,9 @@ export default function QuestionImportActions({
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full justify-between rounded-full px-5 sm:w-[190px]"
+                  className="h-10 w-full justify-between rounded-[10px] border-[#E5E7EB] bg-white px-4 text-[12px] font-medium text-[#374151] shadow-none sm:w-[160px]"
                 >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Хэрэгслүүд
+                  Харагсдуулах
                   <ChevronDown className="ml-2 h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -722,8 +713,6 @@ export default function QuestionImportActions({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        </div>
-
         {aiVariantEnabled ? (
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
             <Badge variant="outline" className="border-amber-300 text-amber-700">

@@ -61,13 +61,12 @@ export default function PublishExamButton({
     <div className="flex flex-col items-stretch gap-2 md:items-end">
       <Button
         type="button"
-        size="lg"
         variant={isPublished ? "secondary" : "default"}
         onClick={handlePublish}
         disabled={isPublished}
         loading={isPending}
-        loadingText="Нийтэлж байна..."
-        className="min-w-[190px]"
+        loadingText="Үүсгэж байна..."
+        className="h-[30px] min-w-[116px] rounded-[9px] bg-[#6EA8FE] px-4 text-[12px] font-medium text-white shadow-none hover:bg-[#5C99F6] disabled:bg-[#D9E8FF] disabled:text-[#5F7AA7]"
       >
         {isPublished ? (
           <>
@@ -77,7 +76,7 @@ export default function PublishExamButton({
         ) : (
           <>
             <Send className="h-4 w-4" />
-            Шалгалт нийтлэх
+            Шалгалт үүсгэх
           </>
         )}
       </Button>
